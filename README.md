@@ -92,4 +92,4 @@ starengine.allowQualityScaling = 1  # 1 for High-End (Cubic), 0 for Low-End (Lin
 * Base Project: DXVK (Original by doitsujin) v2.7.1
 * License: Distributed under the zlib/libpng license.
 
-> NOTE FOR DEVELOPERS: This repository currently hosts compiled binaries and configuration documentation. Source code patches are scheduled for release following the initial public testing phase. 
+> NOTE FOR DEVELOPERS: Follow the Readme instructions in both the build/compilation folder and the source code folder to get successful build.
