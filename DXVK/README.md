@@ -32,7 +32,21 @@ rename to ```dxvk``` and place them in this directory)
 																						
     } *(do note that the 32 bit dll command build isn't made yet)*	 
  }
- 
+
+ ---
+
+ ### These are the files that were edited, look into them for star engine codes;;
+* **src/dxgi/dxgi_swapchain.cpp**
+* **src/dxvk/dxvk_context.cpp**
+* **src/dxvk/dxvk_context.h**
+* **src/dxvk/dxvk_device.cpp**
+* **src/dxvk/dxvk_graphics.cpp**
+* **src/dxvk/dxvk_graphics.h**
+* **src/dxvk/dxvk_options.cpp**
+* **src/dxvk/dxvk_options.h**
+* **src/util/config/config.cpp**
+* **src/util/config/config.h**
+* *Alternatively you can check the patch created for the codes instantly*
  ---
  
 >CREDITS: 
