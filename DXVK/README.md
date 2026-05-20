@@ -47,6 +47,21 @@ rename to ```dxvk``` and place them in this directory)
 * **src/util/config/config.cpp**
 * **src/util/config/config.h**
 * *Alternatively you can check the patch created for the codes instantly*
+
+### These are the detailed list of what has been implemented;
+
+| File                                      | Level of Changes     | What He Implemented |
+|-------------------------------------------|----------------------|---------------------|
+| src/dxgi/dxgi_swapchain.cpp              | Medium-High         | HAAE Tiered Adaptive Scaling logic in Present1(), image surface handling, resolution comparison, and hardware blit decisions |
+| src/dxvk/dxvk_context.cpp                | Very Heavy (Main)   | Mid-frame draw threshold flushing, dynamic bind-skip logic, StarEngine profile init, Android logging, HUD version override, draw counter |
+| src/dxvk/dxvk_context.h                  | Medium              | Added StarProfile struct, new member variables (m_drawsSinceSubmit, m_starProfile), and function declarations |
+| src/dxvk/dxvk_device.cpp                 | Light-Medium        | Device-level initialization and Star Engine profile setup |
+| src/dxvk/dxvk_graphics.cpp               | Medium              | Graphics pipeline handling related to bind-skip and dynamic state optimizations |
+| src/dxvk/dxvk_graphics.h                 | Light               | Header definitions for graphics-related Star Engine features |
+| src/dxvk/dxvk_options.cpp                | Medium              | Registration of new starengine.* config options |
+| src/dxvk/dxvk_options.h                  | Light               | Option enum/struct definitions for the new Star Engine config keys |
+| src/util/config/config.cpp               | Medium              | Extended to parse the new starengine.* options |
+| src/util/config/config.h                 | Light-Medium        | Header support for the new config options |
  ---
  
 >CREDITS: 
