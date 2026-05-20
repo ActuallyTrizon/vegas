@@ -50,7 +50,7 @@ rename to ```dxvk``` and place them in this directory)
 
 ### These are the detailed list of what has been implemented;
 
-| File                                      | Level of Changes     | What He Implemented |
+| File                                      | Level of Changes     | What is Implemented |
 |-------------------------------------------|----------------------|---------------------|
 | src/dxgi/dxgi_swapchain.cpp              | Medium-High         | HAAE Tiered Adaptive Scaling logic in Present1(), image surface handling, resolution comparison, and hardware blit decisions |
 | src/dxvk/dxvk_context.cpp                | Very Heavy (Main)   | Mid-frame draw threshold flushing, dynamic bind-skip logic, StarEngine profile init, Android logging, HUD version override, draw counter |
