@@ -737,6 +737,39 @@ namespace dxvk::hud {
 
 
   /**
+   * \brief StarEngine HUD item
+   */
+  class HudStarEngineItem : public HudItem {
+    constexpr static int64_t UpdateInterval = 500'000;
+  public:
+
+    HudStarEngineItem(const Rc<DxvkDevice>& device);
+
+    ~HudStarEngineItem();
+
+    void update(dxvk::high_resolution_clock::time_point time);
+
+    HudPos render(
+      const Rc<DxvkCommandList>&ctx,
+      const HudPipelineKey&     key,
+      const HudOptions&         options,
+            HudRenderer&        renderer,
+            HudPos              position);
+
+  private:
+
+    Rc<DxvkDevice>  m_device;
+    std::string     m_statusLine;
+    std::string     m_fsrLine;
+    std::string     m_frameGenLine;
+
+    dxvk::high_resolution_clock::time_point m_lastUpdate
+      = dxvk::high_resolution_clock::now();
+
+  };
+
+
+  /**
    * \brief Frame latency item
    */
   class HudLatencyItem : public HudItem {

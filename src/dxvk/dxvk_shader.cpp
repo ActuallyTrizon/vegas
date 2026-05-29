@@ -2,6 +2,7 @@
 #include "dxvk_pipemanager.h"
 #include "dxvk_shader.h"
 #include "dxvk_shader_io.h"
+#include "dxvk_star_engine.h"
 
 #include <dxvk_dummy_frag.h>
 
@@ -540,6 +541,13 @@ namespace dxvk {
 
     if (m_device->canUseDescriptorBuffer())
       flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT;
+
+    // StarEngine: zero-initialize shared workgroup memory (Feature #6)
+    if (m_device->adapter()->isAdreno()) {
+      uint32_t tier = m_device->adapter()->getAdrenoTier();
+      if (StarEngine::shouldZeroInit(tier))
+        flagsInfo.flags |= VK_PIPELINE_CREATE_2_ENABLE_WORKGROUP_MEMORY_ZERO_INIT_BIT;
+    }
 
     VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
     info.stage        = *stageInfo.getStageInfos();

@@ -12,6 +12,7 @@ namespace dxvk {
 
     /// Enable debug utils
     bool enableDebugUtils = false;
+	bool enableAsync;
 
     /// Enable memory defragmentation
     Tristate enableMemoryDefrag = Tristate::Auto;
@@ -71,6 +72,18 @@ namespace dxvk {
 
     /// Device name
     std::string deviceFilter;
+
+    /// StarEngine: FSR 1.0 upscaler
+    Tristate starEnableFsr = Tristate::Auto;
+
+    /// StarEngine: LSFG frame doubling
+    Tristate starEnableLsfg = Tristate::Auto;
+
+    /// StarEngine: LSFG frame time threshold (ms). 0 = per-tier default.
+    float starLsfgThresholdMs = 0.0f;
+
+    /// StarEngine: VRAM multiplier. 0.0 = per-tier default; 1.0 = real; 2.0 = 2x, etc.
+    float starVramMultiplier = 0.0f;
   };
 
 }

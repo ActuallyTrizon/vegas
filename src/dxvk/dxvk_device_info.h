@@ -304,6 +304,8 @@ namespace dxvk {
      */
     void logDeviceInfo();
 
+    void patchMemoryProperties(uint32_t tier, float multiplier = 0.0f);
+
   private:
 
     struct FeatureEntry {
@@ -324,6 +326,7 @@ namespace dxvk {
     DxvkDeviceExtensionInfo               m_extensionsEnabled   = { };
 
     DxvkDeviceMemoryInfo                  m_memory = { };
+    VkDeviceSize                          m_originalDeviceLocalSize = 0;
 
     DxvkDeviceQueueMapping                m_queueMapping = { };
 

@@ -119,6 +119,7 @@ dxvk_src = [
   'dxvk_shader_spirv.cpp',
   'dxvk_signal.cpp',
   'dxvk_sparse.cpp',
+  'dxvk_star_engine.cpp',
   'dxvk_staging.cpp',
   'dxvk_stats.cpp',
   'dxvk_swapchain_blitter.cpp',

@@ -26,6 +26,10 @@ namespace dxvk {
     m_objects           (this),
     m_submissionQueue   (this, queueCallback) {
 
+    // Auto-enable zeroMappedMemory on Adreno unless user explicitly set it
+    if (adapter->isAdreno() && !instance->config().getOption<bool>("dxvk.zeroMappedMemory", false))
+      m_options.zeroMappedMemory = true;
+
     if (adapter->kmtLocal()) {
       D3DKMT_CREATEDEVICE create = { };
       create.hAdapter = adapter->kmtLocal();

@@ -27,6 +27,13 @@ namespace dxvk {
     m_capabilities  (instance, handle, nullptr) {
     const auto& properties = m_capabilities.getProperties();
 
+    if (isAdreno()) {
+      uint32_t tier = getAdrenoTier();
+      float multiplier = instance.config().getOption<float>("dxvk.starVramMultiplier", 0.0f);
+      m_capabilities.patchMemoryProperties(tier, multiplier);
+      Logger::info("Adreno GPU detected: applying StarEngine memory patches");
+    }
+
     if (properties.vk11.deviceLUIDValid) {
       D3DKMT_OPENADAPTERFROMLUID open = { };
       memcpy(&open.AdapterLuid, properties.vk11.deviceLUID, sizeof(open.AdapterLuid));

@@ -1069,36 +1069,36 @@ namespace dxvk {
 
 
   DxvkGraphicsPipelineHandle DxvkGraphicsPipeline::getPipelineHandle(
-    const DxvkGraphicsPipelineStateInfo& state) {
+    const DxvkGraphicsPipelineStateInfo& state,
+          bool                           async) { // Added bool async
+    
     DxvkGraphicsPipelineInstance* instance = this->findInstance(state);
 
     if (unlikely(!instance)) {
-      // Exit early if the state vector is invalid
-      if (!this->validatePipelineState(state, true))
-        return DxvkGraphicsPipelineHandle();
+        // If we are in async mode and the instance doesn't exist yet, 
+        // return empty immediately to skip the stutter.
+        if (async)
+            return DxvkGraphicsPipelineHandle();
 
-      // Prevent other threads from adding new instances and check again
-      std::unique_lock<dxvk::mutex> lock(m_mutex);
-      instance = this->findInstance(state);
+        // Standard logic for when async is OFF (it will block/freeze until ready)
+        if (!this->validatePipelineState(state, true))
+            return DxvkGraphicsPipelineHandle();
 
-      if (!instance) {
-        // Keep pipeline object locked, at worst we're going to stall
-        // a state cache worker and the current thread needs priority.
-        bool canCreateBasePipeline = this->canCreateBasePipeline(state);
-        instance = this->createInstance(state, canCreateBasePipeline);
+        std::unique_lock<dxvk::mutex> lock(m_mutex);
+        instance = this->findInstance(state);
 
-        // Unlock here since we may dispatch the pipeline to a worker,
-        // which will then acquire it to increment the use counter.
-        lock.unlock();
+        if (!instance) {
+            bool canCreateBasePipeline = this->canCreateBasePipeline(state);
+            instance = this->createInstance(state, canCreateBasePipeline);
+            lock.unlock();
 
-        // If necessary, compile an optimized pipeline variant
-        if (!instance->fastHandle.load())
-          m_workers->compileGraphicsPipeline(this, state, DxvkPipelinePriority::Low);
-      }
+            if (!instance->fastHandle.load())
+                m_workers->compileGraphicsPipeline(this, state, DxvkPipelinePriority::Low);
+        }
     }
 
     return instance->getHandle();
-  }
+}
 
 
   void DxvkGraphicsPipeline::compilePipeline(

@@ -7,6 +7,7 @@
 #include "dxvk_device_info.h"
 #include "dxvk_instance.h"
 #include "dxvk_limits.h"
+#include "dxvk_star_engine.h"
 
 namespace dxvk {
 
@@ -447,6 +448,34 @@ namespace dxvk {
       m_memory.core.pNext = &m_memory.budget;
 
     vk->vkGetPhysicalDeviceMemoryProperties2(adapter, &m_memory.core);
+
+    // Store original heap sizes for patchMemoryProperties
+    m_originalDeviceLocalSize = 0;
+    for (uint32_t i = 0; i < m_memory.core.memoryProperties.memoryHeapCount; i++) {
+      if (m_memory.core.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+        m_originalDeviceLocalSize = m_memory.core.memoryProperties.memoryHeaps[i].size;
+      }
+    }
+  }
+
+
+  void DxvkDeviceCapabilities::patchMemoryProperties(uint32_t tier, float multiplier) {
+    if (multiplier > 0.0f) {
+      // User-specified multiplier: apply directly to original size
+      VkDeviceSize newSize = static_cast<VkDeviceSize>(
+        static_cast<double>(m_originalDeviceLocalSize) * multiplier);
+      newSize = std::max(newSize, m_originalDeviceLocalSize);
+
+      for (uint32_t i = 0; i < m_memory.core.memoryProperties.memoryHeapCount; i++) {
+        if (m_memory.core.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+          m_memory.core.memoryProperties.memoryHeaps[i].size = newSize;
+        }
+      }
+      return;
+    }
+
+    // Default: StarEngine system-RAM % based (Feature #1)
+    StarEngine::applyVramSwap(m_memory.core.memoryProperties, tier);
   }
 
 

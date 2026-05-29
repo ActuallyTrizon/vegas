@@ -547,9 +547,10 @@ namespace dxvk {
      * \param [in] state Pipeline state vector
      * \returns Pipeline handle and handle type
      */
+    // Find the getPipelineHandle declaration and update it:
     DxvkGraphicsPipelineHandle getPipelineHandle(
-      const DxvkGraphicsPipelineStateInfo&    state);
-    
+      const DxvkGraphicsPipelineStateInfo& state,
+        bool                           async = false);
     /**
      * \brief Compiles a pipeline
      * 

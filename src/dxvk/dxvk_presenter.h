@@ -19,6 +19,7 @@
 #include "dxvk_format.h"
 #include "dxvk_image.h"
 #include "dxvk_latency.h"
+#include "dxvk_star_engine.h"
 
 namespace dxvk {
 
@@ -325,6 +326,22 @@ namespace dxvk {
     FpsLimiter                  m_fpsLimiter;
 
     bool                        m_hasGamescopeFenceSignalBug = false;
+
+    bool                        m_fsrInitialized = false;
+    StarFsr                     m_fsr;
+    VkCommandPool               m_fsrCmdPool = VK_NULL_HANDLE;
+    VkCommandBuffer             m_fsrCmdBuffer = VK_NULL_HANDLE;
+    VkDescriptorPool            m_fsrDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet             m_fsrDescSet = VK_NULL_HANDLE;
+    std::vector<VkImageView>    m_fsrImageViews;
+
+    bool                        m_frameGenEnabled = false;
+    dxvk::high_resolution_clock::time_point m_lastPresentTime = dxvk::high_resolution_clock::now();
+    void applyFrameGen();
+
+    void initFsr(VkFormat format, uint32_t imageCount, const std::vector<VkImage>& images);
+    void destroyFsr();
+    void dispatchFsr(uint32_t imageIndex);
 
     static const std::array<std::pair<VkColorSpaceKHR, VkColorSpaceKHR>, 2> s_colorSpaceFallbacks;
 

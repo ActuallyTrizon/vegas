@@ -21,9 +21,15 @@ namespace dxvk {
     deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
     lowerSinCos           = config.getOption<Tristate>("dxvk.lowerSinCos",            Tristate::Auto);
     tilerMode             = config.getOption<Tristate>("dxvk.tilerMode",              Tristate::Auto);
+	enableAsync = config.getOption<bool>("dxvk.enableAsync",                          false);
 
     auto budget = config.getOption<int32_t>("dxvk.maxMemoryBudget", 0);
     maxMemoryBudget = VkDeviceSize(std::max(budget, 0)) << 20u;
+
+    starEnableFsr       = config.getOption<Tristate>("dxvk.starEnableFsr",        Tristate::Auto);
+    starEnableLsfg      = config.getOption<Tristate>("dxvk.starEnableLsfg",       Tristate::Auto);
+    starLsfgThresholdMs = config.getOption<float>   ("dxvk.starLsfgThresholdMs",  0.0f);
+    starVramMultiplier  = config.getOption<float>   ("dxvk.starVramMultiplier",   0.0f);
   }
 
 }

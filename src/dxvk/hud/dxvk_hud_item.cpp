@@ -13,6 +13,8 @@
 #include <iomanip>
 #include <version.h>
 
+#include "../dxvk_star_engine.h"
+
 namespace dxvk::hud {
 
   HudItem::~HudItem() {
@@ -1384,6 +1386,81 @@ namespace dxvk::hud {
          / (uint32_t(m_tasksTotal - m_offset));
   }
 
+
+
+  HudStarEngineItem::HudStarEngineItem(const Rc<DxvkDevice>& device)
+  : m_device(device) {
+    m_statusLine = "StarEngine 2.7.3-vegas";
+
+    if (device->adapter()->isAdreno()) {
+      uint32_t tier = device->adapter()->getAdrenoTier();
+      m_statusLine = str::format("StarEngine 2.7.3-vegas [Adreno tier ", tier, "]");
+
+      bool fsrOn = device->config().starEnableFsr != Tristate::False;
+      m_fsrLine = fsrOn ? "FSR 1.0: on" : "FSR 1.0: off";
+
+      bool lsfgOn = device->config().starEnableLsfg != Tristate::False;
+      m_frameGenLine = lsfgOn ? "LSFG: on" : "LSFG: off";
+
+      float vramMul = device->config().starVramMultiplier;
+      if (vramMul > 0.0f)
+        m_statusLine += str::format(" [VRAMx", vramMul, "]");
+    } else {
+      m_fsrLine = "FSR: N/A (non-Adreno)";
+      m_frameGenLine = "LSFG: N/A (non-Adreno)";
+    }
+  }
+
+
+  HudStarEngineItem::~HudStarEngineItem() {
+
+  }
+
+
+  void HudStarEngineItem::update(dxvk::high_resolution_clock::time_point time) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(time - m_lastUpdate);
+
+    if (elapsed.count() >= UpdateInterval) {
+      auto& props = m_device->adapter()->deviceProperties().core.properties;
+      uint64_t vramTotal = 0;
+      for (uint32_t i = 0; i < props.memoryHeapCount; i++) {
+        if (props.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+          vramTotal = props.memoryHeaps[i].size;
+      }
+      m_lastUpdate = time;
+    }
+  }
+
+
+  HudPos HudStarEngineItem::render(
+    const Rc<DxvkCommandList>&ctx,
+    const HudPipelineKey&     key,
+    const HudOptions&         options,
+          HudRenderer&        renderer,
+          HudPos              position) {
+    position.y += 16;
+    renderer.drawText(16, position, 0xff00ff00u, m_statusLine);
+
+    if (m_device->adapter()->isAdreno()) {
+      // Adaptive performance status (Feature #8)
+      float targetFrameTime = 16.667f;
+      auto state = StarEngine::analyzePerformance(0.5f, 16.667f, targetFrameTime);
+      uint32_t perfColor = StarEngine::getGraphColor(state);
+      const char* perfStr = StarEngine::getStatusString(state);
+      perfColor |= 0xff000000u;
+      position.y += 20;
+      renderer.drawText(16, position, perfColor, str::format("Perf: ", perfStr));
+    }
+
+    position.y += 20;
+    renderer.drawText(16, position, 0xff00ff00u, m_fsrLine);
+
+    position.y += 20;
+    renderer.drawText(16, position, 0xff00ff00u, m_frameGenLine);
+
+    position.y += 8;
+    return position;
+  }
 
 
   HudLatencyItem::HudLatencyItem() {

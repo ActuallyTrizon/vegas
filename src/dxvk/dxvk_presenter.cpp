@@ -209,8 +209,55 @@ namespace dxvk {
       fenceInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &fenceInfo));
     }
 
+    dispatchFsr(m_imageIndex);
+
     VkResult status = m_vkd->vkQueuePresentKHR(
       m_device->queues().graphics.queueHandle, &info);
+
+    if (status >= 0) {
+      auto now = dxvk::high_resolution_clock::now();
+      float frameTime = std::chrono::duration<float, std::milli>(
+        now - m_lastPresentTime).count();
+      m_lastPresentTime = now;
+
+      {
+        bool lsfgEnabled = false;
+        switch (m_device->config().starEnableLsfg) {
+          case Tristate::True:  lsfgEnabled = true;  break;
+          case Tristate::False: lsfgEnabled = false; break;
+          default:              lsfgEnabled = m_device->adapter()->isAdreno(); break;
+        }
+
+        if (lsfgEnabled) {
+          uint32_t tier = m_device->adapter()->getAdrenoTier();
+          float threshold = m_device->config().starLsfgThresholdMs;
+          if (threshold <= 0.0f) {
+            // Use per-tier defaults if no explicit threshold
+            if (StarEngine::needsFrameGen(frameTime, tier)) {
+              m_frameGenEnabled = true;
+              VkPresentInfoKHR genInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+              genInfo.swapchainCount = 1;
+              genInfo.pSwapchains = &m_swapchain;
+              genInfo.pImageIndices = &m_imageIndex;
+              VkResult genStatus = m_vkd->vkQueuePresentKHR(
+                m_device->queues().graphics.queueHandle, &genInfo);
+              if (genStatus < 0)
+                Logger::warn("StarFrameGen: double present failed");
+            }
+          } else if (frameTime >= threshold) {
+            m_frameGenEnabled = true;
+            VkPresentInfoKHR genInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+            genInfo.swapchainCount = 1;
+            genInfo.pSwapchains = &m_swapchain;
+            genInfo.pImageIndices = &m_imageIndex;
+            VkResult genStatus = m_vkd->vkQueuePresentKHR(
+              m_device->queues().graphics.queueHandle, &genInfo);
+            if (genStatus < 0)
+              Logger::warn("StarFrameGen: double present failed");
+          }
+        }
+      }
+    }
 
     // Maintain valid state if presentation succeeded, even if we want to
     // recreate the swapchain. Spec says that 'queue' operations, i.e. the
@@ -731,7 +778,8 @@ namespace dxvk {
     swapInfo.imageExtent            = imageExtent;
     swapInfo.imageArrayLayers       = 1;
     swapInfo.imageUsage             = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                    | (m_device->config().starEnableFsr != Tristate::False && m_device->adapter()->isAdreno() ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags(0));
     swapInfo.imageSharingMode       = VK_SHARING_MODE_EXCLUSIVE;
     swapInfo.preTransform           = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapInfo.compositeAlpha         = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -808,6 +856,8 @@ namespace dxvk {
       m_images.push_back(m_device->importImage(imageInfo, images[i],
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
     }
+
+    initFsr(swapInfo.imageFormat, images.size(), images);
 
     // Create one set of semaphores per swap image, as well as a fence
     // that we use to ensure that semaphores are safe to access.
@@ -1219,6 +1269,8 @@ namespace dxvk {
       m_vkd->vkDestroyFence(m_vkd->device(), sem.fence, nullptr);
     }
 
+    destroyFsr();
+
     // The conditional is here because some third party layers don't properly handle null swapchains
     if (m_swapchain)
       m_vkd->vkDestroySwapchainKHR(m_vkd->device(), m_swapchain, nullptr);
@@ -1347,6 +1399,187 @@ namespace dxvk {
       if (canSignal)
         m_signal->signal(frame.frameId);
     }
+  }
+
+
+  void Presenter::initFsr(VkFormat format, uint32_t imageCount, const std::vector<VkImage>& images) {
+    destroyFsr();
+
+    bool fsrEnabled = false;
+    switch (m_device->config().starEnableFsr) {
+      case Tristate::True:  fsrEnabled = true;  break;
+      case Tristate::False: fsrEnabled = false; break;
+      default:              fsrEnabled = m_device->adapter()->isAdreno(); break;
+    }
+    if (!fsrEnabled)
+      return;
+
+    if (!m_fsr.init(m_vkd, format)) {
+      Logger::warn("StarFsr: Failed to initialize FSR pipeline");
+      return;
+    }
+
+    VkCommandPoolCreateInfo poolInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+    poolInfo.queueFamilyIndex = m_device->queues().graphics.family;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (m_vkd->vkCreateCommandPool(m_vkd->device(), &poolInfo, nullptr, &m_fsrCmdPool) != VK_SUCCESS) {
+      Logger::warn("StarFsr: Failed to create command pool");
+      destroyFsr();
+      return;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    allocInfo.commandPool = m_fsrCmdPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+    if (m_vkd->vkAllocateCommandBuffers(m_vkd->device(), &allocInfo, &m_fsrCmdBuffer) != VK_SUCCESS) {
+      Logger::warn("StarFsr: Failed to allocate command buffer");
+      destroyFsr();
+      return;
+    }
+
+    VkDescriptorPoolSize poolSize = {};
+    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSize.descriptorCount = 2;
+
+    VkDescriptorPoolCreateInfo descPoolInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+    descPoolInfo.maxSets = 1;
+    descPoolInfo.poolSizeCount = 1;
+    descPoolInfo.pPoolSizes = &poolSize;
+    if (m_vkd->vkCreateDescriptorPool(m_vkd->device(), &descPoolInfo, nullptr, &m_fsrDescPool) != VK_SUCCESS) {
+      Logger::warn("StarFsr: Failed to create descriptor pool");
+      destroyFsr();
+      return;
+    }
+
+    VkDescriptorSetAllocateInfo setAllocInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+    setAllocInfo.descriptorPool = m_fsrDescPool;
+    setAllocInfo.descriptorSetCount = 1;
+    setAllocInfo.pSetLayouts = &m_fsr.descriptorSetLayout();
+    if (m_vkd->vkAllocateDescriptorSets(m_vkd->device(), &setAllocInfo, &m_fsrDescSet) != VK_SUCCESS) {
+      Logger::warn("StarFsr: Failed to allocate descriptor set");
+      destroyFsr();
+      return;
+    }
+
+    m_fsrImageViews.resize(imageCount);
+    for (uint32_t i = 0; i < imageCount; i++) {
+      VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+      viewInfo.image = images[i];
+      viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = format;
+      viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.subresourceRange.levelCount = 1;
+      viewInfo.subresourceRange.layerCount = 1;
+
+      if (m_vkd->vkCreateImageView(m_vkd->device(), &viewInfo, nullptr, &m_fsrImageViews[i]) != VK_SUCCESS) {
+        Logger::warn("StarFsr: Failed to create image view");
+        for (uint32_t j = 0; j < i; j++)
+          m_vkd->vkDestroyImageView(m_vkd->device(), m_fsrImageViews[j], nullptr);
+        m_fsrImageViews.clear();
+        destroyFsr();
+        return;
+      }
+    }
+
+    m_fsrInitialized = true;
+    Logger::info("StarFsr: FSR initialized successfully");
+  }
+
+  void Presenter::destroyFsr() {
+    m_fsrInitialized = false;
+    for (auto view : m_fsrImageViews)
+      if (view) m_vkd->vkDestroyImageView(m_vkd->device(), view, nullptr);
+    m_fsrImageViews.clear();
+    if (m_fsrDescPool) m_vkd->vkDestroyDescriptorPool(m_vkd->device(), m_fsrDescPool, nullptr);
+    m_fsrDescPool = VK_NULL_HANDLE;
+    m_fsrDescSet = VK_NULL_HANDLE;
+    if (m_fsrCmdPool) {
+      m_fsrCmdBuffer = VK_NULL_HANDLE;
+      m_vkd->vkDestroyCommandPool(m_vkd->device(), m_fsrCmdPool, nullptr);
+      m_fsrCmdPool = VK_NULL_HANDLE;
+    }
+    m_fsr.destroy(m_vkd);
+  }
+
+  void Presenter::dispatchFsr(uint32_t imageIndex) {
+    if (!m_fsrInitialized || imageIndex >= m_fsrImageViews.size())
+      return;
+
+    VkImageView imageView = m_fsrImageViews[imageIndex];
+    if (!imageView)
+      return;
+
+    VkCommandBuffer cmd = m_fsrCmdBuffer;
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (m_vkd->vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
+      return;
+
+    VkImage swapImage = m_images[imageIndex]->handle();
+    VkExtent2D extent = {
+      m_images[imageIndex]->info().extent.width,
+      m_images[imageIndex]->info().extent.height
+    };
+
+    VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier(cmd,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkDescriptorImageInfo imgInfo = {};
+    imgInfo.imageView = imageView;
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet write[2] = {};
+    write[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write[0].dstSet = m_fsrDescSet;
+    write[0].dstBinding = 0;
+    write[0].descriptorCount = 1;
+    write[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    write[0].pImageInfo = &imgInfo;
+    write[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write[1].dstSet = m_fsrDescSet;
+    write[1].dstBinding = 1;
+    write[1].descriptorCount = 1;
+    write[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    write[1].pImageInfo = &imgInfo;
+
+    m_vkd->vkUpdateDescriptorSets(m_vkd->device(), 2, write, 0, nullptr);
+
+    m_fsr.dispatch(cmd, m_fsrDescSet, imageView, extent);
+
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    vkCmdPipelineBarrier(cmd,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    if (m_vkd->vkEndCommandBuffer(cmd) != VK_SUCCESS)
+      return;
+
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    if (m_vkd->vkQueueSubmit(m_device->queues().graphics.queueHandle, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+      Logger::warn("StarFsr: Queue submit failed");
   }
 
 

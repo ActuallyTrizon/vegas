@@ -280,6 +280,36 @@ namespace dxvk {
      */
     bool isUnifiedMemoryArchitecture() const;
 
+    bool isAdreno() const {
+      const auto& props = m_capabilities.getProperties().core.properties;
+      if (props.vendorID == 0x5143) return true;
+      constexpr char a[] = {'a','d','r','e','n','o'};
+      for (int i = 0; i < VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 6 && props.deviceName[i]; ++i) {
+        int j = 0;
+        for (; j < 6; ++j) {
+          char c = props.deviceName[i + j];
+          if (c >= 'A' && c <= 'Z') c += 0x20;
+          if (c != a[j]) break;
+        }
+        if (j == 6) return true;
+      }
+      return false;
+    }
+
+    uint32_t getAdrenoTier() const {
+      const auto& name = m_capabilities.getProperties().core.properties.deviceName;
+      for (const char* c = name; *c; ++c) {
+        if (*c >= '0' && *c <= '9') {
+          int num = 0;
+          for (; *c >= '0' && *c <= '9'; ++c) num = num * 10 + (*c - '0');
+          if (num >= 740) return 3;
+          if (num >= 720) return 2;
+          return 1;
+        }
+      }
+      return 2;
+    }
+
     /**
      * \brief Registers a relationship with another GPU
      *

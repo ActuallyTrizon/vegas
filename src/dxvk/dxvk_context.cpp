@@ -1,12 +1,26 @@
+#include <fstream>
+#include <string>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <map>
 #include <vector>
 #include <utility>
+#include <cctype>
 
 #include "dxvk_device.h"
 #include "dxvk_context.h"
+#include "dxvk_star_engine.h"
+
+// === STAR ENGINE PATCH - ANDROID LOGGING ===
+#ifdef __ANDROID__
+#include <android/log.h>
+#define STAR_LOG(fmt, ...) __android_log_print(ANDROID_LOG_INFO, "StarEngine", fmt, ##__VA_ARGS__)
+#else
+#include <iostream>
+#define STAR_LOG(fmt, ...) std::cout << "[StarEngine] " << fmt << std::endl
+#endif
+// === END STAR ENGINE PATCH ===
 
 namespace dxvk {
   
@@ -21,15 +35,14 @@ namespace dxvk {
     m_queryManager(m_common->queryPool()),
     m_descriptorWorker(device),
     m_implicitResolves(device) {
-    // Create descriptor heap or legacy pool object,
-    // depending on feature support.
-    if (device->canUseDescriptorBuffer()) {
-      m_descriptorHeap = new DxvkResourceDescriptorHeap(device.ptr());
-
-      m_features.set(DxvkContextFeature::DescriptorBuffer);
-    } else {
-      m_descriptorPool = new DxvkDescriptorPool(device.ptr());
-    }
+  // Create descriptor heap or legacy pool object,
+  // depending on feature support.
+  if (device->canUseDescriptorBuffer()) {
+    m_descriptorHeap = new DxvkResourceDescriptorHeap(device.ptr());
+    m_features.set(DxvkContextFeature::DescriptorBuffer);
+  } else {
+    m_descriptorPool = new DxvkDescriptorPool(device.ptr());
+  }
 
     // Init framebuffer info with default render pass in case
     // the app does not explicitly bind any render targets
@@ -67,8 +80,32 @@ namespace dxvk {
     // Add a fast path to query debug utils support
     if (m_device->debugFlags().test(DxvkDebugFlag::Capture))
       m_features.set(DxvkContextFeature::DebugUtils);
-  }
-  
+	  
+	// === STAR ENGINE HUD OVERRIDE ===
+    // This forces the DXVK HUD to use your custom version string
+    #ifdef _WIN32
+    _putenv_s("DXVK_HUD_VERSION", STAR_ENGINE_VERSION);
+#else
+    setenv("DXVK_HUD_VERSION", STAR_ENGINE_VERSION, 1);
+#endif
+    
+    STAR_LOG("HUD Version initialized as: %s", STAR_ENGINE_VERSION);
+    // === END HUD OVERRIDE ===
+	
+	      // [StarEngine] Initialize once at creation
+    // Inside DxvkContext constructor
+m_drawsSinceSubmit.store(0, std::memory_order_relaxed);
+m_starProfile.lastBoundVkPipeline = VK_NULL_HANDLE;
+m_starProfile.initialized = false;
+
+// Missing initializations now included:
+m_starProfile.enabled = false;
+m_starProfile.allowBindSkip = false;
+m_starProfile.drawThreshold = 0;
+
+initStarProfile(); 
+}
+ 
   
   DxvkContext::~DxvkContext() {
     
@@ -76,11 +113,22 @@ namespace dxvk {
   
   
   void DxvkContext::beginRecording(const Rc<DxvkCommandList>& cmdList) {
+
     m_cmd = cmdList;
+
     m_cmd->init();
 
+    
+
+    // ✅ Reset StarEngine tracking
+
+    m_drawsSinceSubmit.store(0, std::memory_order_relaxed);
+
+    m_starProfile.lastBoundVkPipeline = VK_NULL_HANDLE;
+
     this->beginCurrentCommands();
-  }
+
+}
   
   
   Rc<DxvkCommandList> DxvkContext::endRecording(
@@ -128,8 +176,20 @@ namespace dxvk {
 
 
   void DxvkContext::flushCommandList(
-    const VkDebugUtilsLabelEXT*       reason,
-          DxvkSubmitStatus*           status) {
+
+        const VkDebugUtilsLabelEXT* reason,
+
+        DxvkSubmitStatus* status) {
+
+    
+
+    // ✅ Reset ALL StarEngine state
+
+    m_drawsSinceSubmit.store(0, std::memory_order_relaxed);
+
+    m_starProfile.lastBoundVkPipeline = VK_NULL_HANDLE;
+
+    
     // Flush pending descriptor updates and assign the sync
     // point to the submission
     if (m_features.test(DxvkContextFeature::DescriptorBuffer))
@@ -144,12 +204,9 @@ namespace dxvk {
       m_latencyTracker, m_latencyFrameId, status);
 
     // Ensure that subsequent submissions do not see the tracker.
-    // It is important to hide certain internal submissions in
-    // case the application is CPU-bound.
     if (m_endLatencyTracking) {
       m_latencyTracker = nullptr;
       m_latencyFrameId = 0u;
-
       m_endLatencyTracking = false;
     }
 
@@ -782,6 +839,33 @@ namespace dxvk {
   }
 
 
+void DxvkContext::draw(uint32_t vertexCount, uint32_t instanceCount,
+                       uint32_t firstVertex, uint32_t firstInstance) {
+    // Corrected draw() and drawIndexed() calls
+if (unlikely(!m_starProfile.initialized)) {
+    initStarProfile();
+}
+
+// Threshold check using Relaxed ordering
+    if (unlikely(m_starProfile.enabled &&
+        m_drawsSinceSubmit.load(std::memory_order_relaxed) >= m_starProfile.drawThreshold)) {
+        
+        this->spillRenderPass(true); 
+        VkDebugUtilsLabelEXT flushLabel = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT, nullptr, "StarEngine_Flush" };
+        this->flushCommandList(&flushLabel, nullptr);
+    }
+
+    if (unlikely((!this->commitGraphicsState<false, false>())))
+        return;
+
+    m_cmd->cmdDraw(vertexCount, instanceCount, firstVertex, firstInstance);
+    m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
+
+    if (m_starProfile.enabled)
+        m_drawsSinceSubmit.fetch_add(1, std::memory_order_relaxed);
+}
+
+
   void DxvkContext::discardImage(
     const Rc<DxvkImage>&          image) {
     VkImageUsageFlags imageUsage = image->info().usage;
@@ -866,9 +950,39 @@ namespace dxvk {
   }
   
   
-  void DxvkContext::drawIndexed(
-          uint32_t          count,
+  void DxvkContext::drawIndexed(uint32_t indexCount, uint32_t instanceCount,
+                              uint32_t firstIndex, int32_t vertexOffset,
+                              uint32_t firstInstance) {
+    // Corrected drawIndexed() call
+    if (unlikely(!m_starProfile.initialized)) {
+        initStarProfile();
+    }
+
+    // Threshold check using Relaxed ordering
+    if (unlikely(m_starProfile.enabled &&
+        m_drawsSinceSubmit.load(std::memory_order_relaxed) >= m_starProfile.drawThreshold)) {
+        
+        this->spillRenderPass(true); 
+        VkDebugUtilsLabelEXT flushLabel = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT, nullptr, "StarEngine_Flush" };
+        this->flushCommandList(&flushLabel, nullptr);
+    }
+
+    if (unlikely((!this->commitGraphicsState<true, false>())))
+        return;
+
+    // FIX: Use correct parameters for indexed draw
+    m_cmd->cmdDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
+
+    if (m_starProfile.enabled)
+        m_drawsSinceSubmit.fetch_add(1, std::memory_order_relaxed);
+}
+
+
+void DxvkContext::drawIndexed(
+          uint32_t                          count,
     const VkDrawIndexedIndirectCommand* draws) {
+    // This is the batch version required by the D3D11 frontend
     drawGeneric<true>(count, draws);
   }
 
@@ -1629,7 +1743,8 @@ namespace dxvk {
   template<bool Indexed, typename T>
   void DxvkContext::drawGeneric(
           uint32_t                  count,
-    const T*                        draws) {
+    const T* draws) {
+
     if (this->commitGraphicsState<Indexed, false>()) {
       if (count == 1u) {
         // Most common case, just emit a single draw
@@ -1708,8 +1823,7 @@ namespace dxvk {
                   instanceCount, instanceIndex);
               }
             } else {
-              // This path only really exists for consistency reasons; all drivers
-              // we care about support MultiDraw natively, but debug tools may not.
+              // This path only really exists for consistency reasons
               if (unlikely(m_features.test(DxvkContextFeature::DebugUtils))) {
                 const char* procName = Indexed ? "vkCmdDrawMultiIndexedEXT" : "vkCmdDrawMultiEXT";
                 m_cmd->cmdBeginDebugUtilsLabel(DxvkCmdBuffer::ExecBuffer,
@@ -1739,8 +1853,8 @@ namespace dxvk {
           }
         }
       }
-    }
   }
+}
 
 
   template<bool Indexed>
@@ -2673,6 +2787,26 @@ namespace dxvk {
       }
     }
 
+    // StarEngine aspect ratio correction (Feature #2)
+    if (viewportCount > 0 && m_device->adapter()->isAdreno()) {
+      uint32_t w = uint32_t(m_state.vp.viewports[0].width + 0.5f);
+      uint32_t h = uint32_t(m_state.vp.viewports[0].height + 0.5f);
+      float sx = 1.0f, sy = 1.0f;
+      StarEngine::calculateAspectRatio(w, h, sx, sy);
+      if (sx != 1.0f || sy != 1.0f) {
+        float& vw = m_state.vp.viewports[0].width;
+        float& vh = m_state.vp.viewports[0].height;
+        float& vx = m_state.vp.viewports[0].x;
+        float& vy = m_state.vp.viewports[0].y;
+        float newW = vw * sx;
+        float newH = vh * sy;
+        vx += (vw - newW) * 0.5f;
+        vy += (vh - newH) * 0.5f;
+        vw = newW;
+        vh = newH;
+      }
+    }
+
     m_state.vp.viewportCount = viewportCount;
     m_flags.set(DxvkContextFlag::GpDirtyViewport);
   }
@@ -3333,6 +3467,10 @@ namespace dxvk {
     const Rc<DxvkImageView>&    srcView,
     const VkOffset3D*           srcOffsets,
           VkFilter              filter) {
+    // StarEngine: use cubic filter on Adreno for sharper blits (Feature #7)
+    if (m_device->adapter()->isAdreno() && filter == VK_FILTER_LINEAR)
+      filter = VK_FILTER_CUBIC_IMG;
+
     // Prepare the two images for transfer ops if necessary
     auto dstLayout = dstView->image()->pickLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     auto srcLayout = srcView->image()->pickLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -5197,6 +5335,7 @@ namespace dxvk {
       m_flags.clr(DxvkContextFlag::GpRenderPassBound,
                   DxvkContextFlag::GpRenderPassSideEffects,
                   DxvkContextFlag::GpRenderPassNeedsFlush);
+      m_starProfile.lastBoundVkPipeline = VK_NULL_HANDLE;
 
       this->pauseTransformFeedback();
 
@@ -5697,7 +5836,8 @@ namespace dxvk {
   }
   
   
-  bool DxvkContext::updateGraphicsPipeline() {
+  bool DxvkContext::updateGraphicsPipeline(bool async) {
+  // If there was a line like m_device->stat(DxvkStat::DrawCalls, 1); make sure it is on its own line.
     if (unlikely(m_state.cp.pipeline != nullptr))
       this->unbindComputePipeline();
 
@@ -5758,14 +5898,40 @@ namespace dxvk {
       : DxvkContextFlags(DxvkContextFlag::GpDirtyRasterizerState,
                          DxvkContextFlag::GpDirtyDepthBias));
 
-    // Retrieve and bind actual Vulkan pipeline handle
-    auto pipelineInfo = m_state.gp.pipeline->getPipelineHandle(m_state.gp.state);
+    // === WILD SPEED & STAR ENGINE MERGED ===
+    // Check if the user enabled "Async" in dxvk.conf
+    bool useAsync = m_device->config().enableAsync && this->checkAsyncCompilationCompat();
 
-    if (unlikely(!pipelineInfo.handle))
+    // Pass 'useAsync' to getPipelineHandle.
+    // If it's not ready, it returns NULL immediately instead of freezing.
+    auto pipelineInfo = m_state.gp.pipeline->getPipelineHandle(m_state.gp.state, useAsync);
+
+    // WILD SPEED SKIP: If shader is still compiling, return false to skip this draw call.
+    // This maintains your 30 FPS target on Adreno 610/619.
+    if (useAsync && unlikely(!pipelineInfo.handle))
       return false;
 
-    m_cmd->cmdBindPipeline(DxvkCmdBuffer::ExecBuffer,
-      VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineInfo.handle);
+    // Standard safety check
+    if (unlikely(!pipelineInfo.handle))
+      return false;
+      
+    bool shouldBind = true;
+
+    if (m_starProfile.enabled && m_starProfile.allowBindSkip) {
+      // Only skip if the handle matches AND the pipeline state isn't "dirty"
+      if (pipelineInfo.handle == m_starProfile.lastBoundVkPipeline &&
+          !m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
+        shouldBind = false;
+      }
+    }
+
+    if (shouldBind) {
+      m_cmd->cmdBindPipeline(DxvkCmdBuffer::ExecBuffer, 
+                             VK_PIPELINE_BIND_POINT_GRAPHICS, 
+                             pipelineInfo.handle);
+      m_starProfile.lastBoundVkPipeline = pipelineInfo.handle;
+    }
+    // === END MERGED PATCH ===
 
     // Update attachment usage info based on the pipeline state
     m_state.om.attachmentMask.merge(pipelineInfo.attachments);
@@ -7015,10 +7181,15 @@ namespace dxvk {
   template<bool Indexed, bool Indirect, bool Resolve>
   bool DxvkContext::commitGraphicsState() {
     if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
-      if (unlikely(!this->updateGraphicsPipeline()))
+      // 1. Determine if we want to use Async for this draw
+      bool useAsync = m_device->config().enableAsync && this->checkAsyncCompilationCompat();
+
+      // 2. Call your StarEngine-optimized update function
+      // We pass 'useAsync' so the pipeline manager knows whether to wait or skip
+      if (unlikely(!this->updateGraphicsPipeline(useAsync)))
         return false;
     }
-
+	
     // End render pass if there are pending resolves
     if (m_flags.any(DxvkContextFlag::GpDirtyRenderTargets,
                     DxvkContextFlag::GpRenderPassNeedsFlush))
@@ -9352,4 +9523,163 @@ namespace dxvk {
       m_cmd->cmdEndDebugUtilsLabel(DxvkCmdBuffer::ExecBuffer);
   }
 
+
+// ========== STAR ENGINE OPTIMIZATION HELPERS ==========
+
+void DxvkContext::initStarProfile() {
+    if (m_starProfile.initialized)
+        return;
+
+    m_starProfile.enabled = false;
+    m_starProfile.allowBindSkip = false;
+    m_starProfile.drawThreshold = 150;
+    m_starProfile.lastBoundVkPipeline = VK_NULL_HANDLE;
+
+    if (m_device != nullptr && m_device->adapter() != nullptr) {
+        auto& props = m_device->adapter()->deviceProperties().core.properties;
+
+        bool isAdreno = (props.vendorID == 0x5143);
+        if (!isAdreno) {
+            std::string name = props.deviceName;
+            for (auto& c : name) c = std::tolower(uint8_t(c));
+            isAdreno = name.find("adreno") != std::string::npos;
+        }
+
+        if (isAdreno) {
+            m_starProfile.enabled = true;
+            m_starProfile.allowBindSkip = true;
+
+            m_starProfile.tier = 2;
+            for (const char* c = props.deviceName; *c; ++c) {
+                if (*c >= '0' && *c <= '9') {
+                    int num = 0;
+                    for (; *c >= '0' && *c <= '9'; ++c) num = num * 10 + (*c - '0');
+                    if (num >= 740) m_starProfile.tier = 3;
+                    else if (num >= 720) m_starProfile.tier = 2;
+                    else m_starProfile.tier = 1;
+                    break;
+                }
+            }
+            static constexpr uint32_t thresholds[] = {600, 1200, 2000};
+            m_starProfile.drawThreshold = (m_starProfile.tier >= 1 && m_starProfile.tier <= 3) ? thresholds[m_starProfile.tier - 1] : 600;
+        }
+    }
+
+    m_starProfile.initialized = true;
 }
+
+bool DxvkContext::loadStarConfig() {
+    std::vector<std::string> potentialPaths = {
+        "/storage/emulated/0/starengine.ini",
+        "/storage/emulated/0/Download/starengine.ini",
+        "/storage/emulated/0/Winlator/starengine.ini",
+        "/storage/emulated/0/Android/data/com.winlator/files/starengine.ini" // Scoped Storage
+    };
+
+    if (const char* env = std::getenv("STAR_CONFIG_FILE"))
+        potentialPaths.insert(potentialPaths.begin(), env);
+
+    bool found = false;
+    for (const auto& p : potentialPaths) {
+        std::ifstream file(p); // RAII ensures file is closed automatically
+        if (file.is_open()) {
+            STAR_LOG("StarEngine config found: %s", p.c_str());
+            std::string line;
+            while (std::getline(file, line)) {
+                // Strip comments
+                size_t commentPos = line.find('#');
+                if (commentPos != std::string::npos) line = line.substr(0, commentPos);
+
+                // Strip whitespace
+                line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+                if (line.empty()) continue;
+
+                size_t eqPos = line.find('=');
+                if (eqPos == std::string::npos) continue;
+
+                std::string key = line.substr(0, eqPos);
+                std::string val = line.substr(eqPos + 1);
+
+                try {
+                    if (key == "BindSkip") {
+                        m_starProfile.allowBindSkip = (val == "1" || val == "true");
+                    } else if (key == "DrawThreshold") {
+                        uint32_t v = std::stoul(val);
+                        // Clamping: Min 10, Max 10000
+                        m_starProfile.drawThreshold = (v < 10) ? 10 : (v > 10000 ? 10000 : v);
+                    }
+                } catch (const std::exception& e) {
+                    STAR_LOG("Config Error: Could not parse %s=%s", key.c_str(), val.c_str());
+                }
+            }
+            found = true;
+            break;
+        }
+    }
+    if (!found) STAR_LOG("StarEngine: No config file found. Using defaults.");
+    return found;
+}
+
+
+bool DxvkContext::checkAsyncCompilationCompat() const {
+  // For Adreno/StarEngine, we want this to be true for most graphics states
+  return true; 
+}
+
+// Explicit template instantiations for commitGraphicsState
+template bool DxvkContext::commitGraphicsState<false, false, true>();
+template bool DxvkContext::commitGraphicsState<false, false, false>();
+template bool DxvkContext::commitGraphicsState<true, false, true>();
+template bool DxvkContext::commitGraphicsState<true, false, false>();
+template bool DxvkContext::commitGraphicsState<false, true, true>();
+template bool DxvkContext::commitGraphicsState<false, true, false>();
+template bool DxvkContext::commitGraphicsState<true, true, true>();
+template bool DxvkContext::commitGraphicsState<true, true, false>();
+
+// Explicit template instantiations for checkResourceHazards
+template bool DxvkContext::checkResourceHazards<VK_PIPELINE_BIND_POINT_GRAPHICS>(
+  const DxvkPipelineBindings* layout);
+template bool DxvkContext::checkResourceHazards<VK_PIPELINE_BIND_POINT_COMPUTE>(
+  const DxvkPipelineBindings* layout);
+
+// Explicit template instantiations for checkComputeHazards
+template bool DxvkContext::checkComputeHazards<false>();
+template bool DxvkContext::checkComputeHazards<true>();
+
+// Explicit template instantiations for checkGraphicsHazards
+template bool DxvkContext::checkGraphicsHazards<false, false>();
+template bool DxvkContext::checkGraphicsHazards<false, true>();
+template bool DxvkContext::checkGraphicsHazards<true, false>();
+template bool DxvkContext::checkGraphicsHazards<true, true>();
+
+// Explicit template instantiations for checkBufferBarrier
+template bool DxvkContext::checkBufferBarrier<VK_PIPELINE_BIND_POINT_GRAPHICS>(
+  const DxvkBufferSlice& bufferSlice,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+template bool DxvkContext::checkBufferBarrier<VK_PIPELINE_BIND_POINT_COMPUTE>(
+  const DxvkBufferSlice& bufferSlice,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+
+// Explicit template instantiations for checkBufferViewBarrier
+template bool DxvkContext::checkBufferViewBarrier<VK_PIPELINE_BIND_POINT_GRAPHICS>(
+  const Rc<DxvkBufferView>& bufferView,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+template bool DxvkContext::checkBufferViewBarrier<VK_PIPELINE_BIND_POINT_COMPUTE>(
+  const Rc<DxvkBufferView>& bufferView,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+
+// Explicit template instantiations for checkImageViewBarrier
+template bool DxvkContext::checkImageViewBarrier<VK_PIPELINE_BIND_POINT_GRAPHICS>(
+  const Rc<DxvkImageView>& imageView,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+template bool DxvkContext::checkImageViewBarrier<VK_PIPELINE_BIND_POINT_COMPUTE>(
+  const Rc<DxvkImageView>& imageView,
+  VkAccessFlags access,
+  DxvkAccessOp accessOp);
+
+} // This is the ONLY brace that should be here. It closes "namespace dxvk".
