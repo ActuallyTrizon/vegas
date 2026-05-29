@@ -1,4 +1,3 @@
-#include <fstream>
 #include <string>
 #include <algorithm>
 #include <cmath>
@@ -9567,59 +9566,6 @@ void DxvkContext::initStarProfile() {
 
     m_starProfile.initialized = true;
 }
-
-bool DxvkContext::loadStarConfig() {
-    std::vector<std::string> potentialPaths = {
-        "/storage/emulated/0/starengine.ini",
-        "/storage/emulated/0/Download/starengine.ini",
-        "/storage/emulated/0/Winlator/starengine.ini",
-        "/storage/emulated/0/Android/data/com.winlator/files/starengine.ini" // Scoped Storage
-    };
-
-    if (const char* env = std::getenv("STAR_CONFIG_FILE"))
-        potentialPaths.insert(potentialPaths.begin(), env);
-
-    bool found = false;
-    for (const auto& p : potentialPaths) {
-        std::ifstream file(p); // RAII ensures file is closed automatically
-        if (file.is_open()) {
-            STAR_LOG("StarEngine config found: %s", p.c_str());
-            std::string line;
-            while (std::getline(file, line)) {
-                // Strip comments
-                size_t commentPos = line.find('#');
-                if (commentPos != std::string::npos) line = line.substr(0, commentPos);
-
-                // Strip whitespace
-                line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
-                if (line.empty()) continue;
-
-                size_t eqPos = line.find('=');
-                if (eqPos == std::string::npos) continue;
-
-                std::string key = line.substr(0, eqPos);
-                std::string val = line.substr(eqPos + 1);
-
-                try {
-                    if (key == "BindSkip") {
-                        m_starProfile.allowBindSkip = (val == "1" || val == "true");
-                    } else if (key == "DrawThreshold") {
-                        uint32_t v = std::stoul(val);
-                        // Clamping: Min 10, Max 10000
-                        m_starProfile.drawThreshold = (v < 10) ? 10 : (v > 10000 ? 10000 : v);
-                    }
-                } catch (const std::exception& e) {
-                    STAR_LOG("Config Error: Could not parse %s=%s", key.c_str(), val.c_str());
-                }
-            }
-            found = true;
-            break;
-        }
-    }
-    if (!found) STAR_LOG("StarEngine: No config file found. Using defaults.");
-    return found;
-}
-
 
 bool DxvkContext::checkAsyncCompilationCompat() const {
   // For Adreno/StarEngine, we want this to be true for most graphics states
