@@ -334,6 +334,7 @@ namespace dxvk {
     VkDescriptorPool            m_fsrDescPool = VK_NULL_HANDLE;
     VkDescriptorSet             m_fsrDescSet = VK_NULL_HANDLE;
     std::vector<VkImageView>    m_fsrImageViews;
+    VkSemaphore                 m_fsrComplete = VK_NULL_HANDLE;
 
     bool                        m_frameGenEnabled = false;
     dxvk::high_resolution_clock::time_point m_lastPresentTime = dxvk::high_resolution_clock::now();
@@ -341,7 +342,7 @@ namespace dxvk {
 
     void initFsr(VkFormat format, uint32_t imageCount, const std::vector<VkImage>& images);
     void destroyFsr();
-    void dispatchFsr(uint32_t imageIndex);
+    bool dispatchFsr(uint32_t imageIndex, VkSemaphore waitSemaphore);
 
     static const std::array<std::pair<VkColorSpaceKHR, VkColorSpaceKHR>, 2> s_colorSpaceFallbacks;
 

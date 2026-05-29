@@ -124,18 +124,25 @@ namespace dxvk {
     uint64_t systemRamBytes = getSystemRamMB() * 1024ULL * 1024ULL;
     if (systemRamBytes == 0) return;
 
-    static constexpr float vramRatioTable[] = { 0.25f, 0.33f, 0.40f };
-    float ratio = (tier >= 1 && tier <= 3) ? vramRatioTable[tier - 1] : 0.25f;
+    static constexpr float vramRatioTable[] = { 0.15f, 0.20f, 0.25f };
+    float ratio = (tier >= 1 && tier <= 3) ? vramRatioTable[tier - 1] : 0.15f;
+
+    static constexpr uint64_t maxExtraTable[] = { 2ULL << 30, 3ULL << 30, 4ULL << 30 };
+    uint64_t maxExtra = (tier >= 1 && tier <= 3) ? maxExtraTable[tier - 1] : (2ULL << 30);
 
     uint64_t extraVram = static_cast<uint64_t>(static_cast<double>(systemRamBytes) * static_cast<double>(ratio));
-    extraVram = std::clamp(extraVram, 1ULL << 30, 8ULL << 30);
+    extraVram = std::min(extraVram, maxExtra);
 
-    uint64_t maxSafeVram = systemRamBytes / 2ULL;
+    uint64_t maxSafeVram = systemRamBytes / 3ULL;
 
     for (uint32_t i = 0; i < props.memoryHeapCount; i++) {
         if (props.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-            uint64_t newSize = props.memoryHeaps[i].size + extraVram;
-            props.memoryHeaps[i].size = std::min(newSize, maxSafeVram);
+            uint64_t realSize = props.memoryHeaps[i].size;
+            uint64_t newSize = realSize + extraVram;
+            newSize = std::max(newSize, realSize);
+            newSize = std::min(newSize, maxSafeVram);
+            newSize = std::min(newSize, realSize * 3ULL);
+            props.memoryHeaps[i].size = newSize;
         }
     }
   }
@@ -752,7 +759,8 @@ namespace dxvk {
   StarFsr::~StarFsr() {
   }
 
-  bool StarFsr::init(const Rc<vk::DeviceFn>& vkd, VkFormat format) {
+  bool StarFsr::init(const Rc<vk::DeviceFn>& vkd, VkFormat format, bool enableZeroInit) {
+    m_zeroInit = enableZeroInit;
     if (!createShaderModule(vkd)) return false;
     if (!createDescriptorSetLayout(vkd)) { destroy(vkd); return false; }
     if (!createPipelineLayout(vkd)) { destroy(vkd); return false; }
@@ -815,9 +823,16 @@ namespace dxvk {
     stage.module = m_shader;
     stage.pName = "main";
 
+    VkPipelineCreateFlags2CreateInfo flagsInfo = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO };
+    if (m_zeroInit)
+      flagsInfo.flags |= 0x04000000ULL;
+
     VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
     info.stage = stage;
     info.layout = m_pipeLayout;
+
+    if (flagsInfo.flags)
+      flagsInfo.pNext = std::exchange(info.pNext, &flagsInfo);
 
     return vkd->vkCreateComputePipelines(vkd->device(), VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline) == VK_SUCCESS;
   }

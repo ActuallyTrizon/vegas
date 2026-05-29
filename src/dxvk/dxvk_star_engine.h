@@ -56,7 +56,7 @@ namespace dxvk {
     StarFsr(const StarFsr&) = delete;
     StarFsr& operator=(const StarFsr&) = delete;
 
-    bool init(const Rc<vk::DeviceFn>& vkd, VkFormat format);
+    bool init(const Rc<vk::DeviceFn>& vkd, VkFormat format, bool enableZeroInit = false);
     void destroy(const Rc<vk::DeviceFn>& vkd);
 
     bool valid() const { return m_pipeline != VK_NULL_HANDLE; }
@@ -69,6 +69,7 @@ namespace dxvk {
                   VkImageView imageView, VkExtent2D extent) const;
 
   private:
+    bool m_zeroInit = false;
     VkShaderModule m_shader = VK_NULL_HANDLE;
     VkPipelineLayout m_pipeLayout = VK_NULL_HANDLE;
     VkPipeline m_pipeline = VK_NULL_HANDLE;

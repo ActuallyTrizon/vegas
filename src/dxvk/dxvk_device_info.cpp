@@ -513,8 +513,9 @@ namespace dxvk {
       m_featuresSupported.nvLowLatency2 = VK_FALSE;
     }
 
-    // EXT_multi_draw is broken on proprietary qcom on some devices
-    if (m_properties.vk12.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY)
+    // EXT_multi_draw is broken on Qualcomm drivers (both proprietary and Turnip)
+    if (m_properties.vk12.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY
+     || m_properties.vk12.driverID == VK_DRIVER_ID_MESA_TURNIP)
       m_featuresSupported.extMultiDraw.multiDraw = VK_FALSE;
 
     // If we're running off a device without a sparse binding queue,

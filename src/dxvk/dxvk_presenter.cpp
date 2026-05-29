@@ -209,7 +209,11 @@ namespace dxvk {
       fenceInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &fenceInfo));
     }
 
-    dispatchFsr(m_imageIndex);
+    bool fsrDispatched = false;
+    if (m_fsrInitialized)
+      fsrDispatched = dispatchFsr(m_imageIndex, currSync.present);
+    if (fsrDispatched)
+      info.pWaitSemaphores = &m_fsrComplete;
 
     VkResult status = m_vkd->vkQueuePresentKHR(
       m_device->queues().graphics.queueHandle, &info);
@@ -232,13 +236,15 @@ namespace dxvk {
           uint32_t tier = m_device->adapter()->getAdrenoTier();
           float threshold = m_device->config().starLsfgThresholdMs;
           if (threshold <= 0.0f) {
-            // Use per-tier defaults if no explicit threshold
             if (StarEngine::needsFrameGen(frameTime, tier)) {
               m_frameGenEnabled = true;
               VkPresentInfoKHR genInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
               genInfo.swapchainCount = 1;
               genInfo.pSwapchains = &m_swapchain;
               genInfo.pImageIndices = &m_imageIndex;
+              VkSemaphore lsfgWait = fsrDispatched ? m_fsrComplete : currSync.present;
+              genInfo.waitSemaphoreCount = 1;
+              genInfo.pWaitSemaphores = &lsfgWait;
               VkResult genStatus = m_vkd->vkQueuePresentKHR(
                 m_device->queues().graphics.queueHandle, &genInfo);
               if (genStatus < 0)
@@ -250,6 +256,9 @@ namespace dxvk {
             genInfo.swapchainCount = 1;
             genInfo.pSwapchains = &m_swapchain;
             genInfo.pImageIndices = &m_imageIndex;
+            VkSemaphore lsfgWait = fsrDispatched ? m_fsrComplete : currSync.present;
+            genInfo.waitSemaphoreCount = 1;
+            genInfo.pWaitSemaphores = &lsfgWait;
             VkResult genStatus = m_vkd->vkQueuePresentKHR(
               m_device->queues().graphics.queueHandle, &genInfo);
             if (genStatus < 0)
@@ -777,9 +786,16 @@ namespace dxvk {
     swapInfo.imageColorSpace        = surfaceFormat.colorSpace;
     swapInfo.imageExtent            = imageExtent;
     swapInfo.imageArrayLayers       = 1;
+    VkImageUsageFlags fsrUsage = VkImageUsageFlags(0);
+    if (m_device->config().starEnableFsr != Tristate::False && m_device->adapter()->isAdreno()) {
+      if (caps.surfaceCapabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT)
+        fsrUsage = VK_IMAGE_USAGE_STORAGE_BIT;
+      else
+        Logger::info("Presenter: WSI does not support STORAGE_BIT, FSR disabled");
+    }
     swapInfo.imageUsage             = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
                                     | VK_IMAGE_USAGE_TRANSFER_DST_BIT
-                                    | (m_device->config().starEnableFsr != Tristate::False && m_device->adapter()->isAdreno() ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags(0));
+                                    | fsrUsage;
     swapInfo.imageSharingMode       = VK_SHARING_MODE_EXCLUSIVE;
     swapInfo.preTransform           = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapInfo.compositeAlpha         = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -857,7 +873,8 @@ namespace dxvk {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
     }
 
-    initFsr(swapInfo.imageFormat, images.size(), images);
+    if (fsrUsage & VK_IMAGE_USAGE_STORAGE_BIT)
+      initFsr(swapInfo.imageFormat, images.size(), images);
 
     // Create one set of semaphores per swap image, as well as a fence
     // that we use to ensure that semaphores are safe to access.
@@ -1414,14 +1431,29 @@ namespace dxvk {
     if (!fsrEnabled)
       return;
 
-    if (!m_fsr.init(m_vkd, format)) {
+    // Check that the format supports storage image operations
+    auto formatFeatures = m_device->getFormatFeatures(format);
+    if (!(formatFeatures.optimal & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
+      Logger::warn(str::format("StarFsr: Format ", format, " does not support storage image, FSR disabled"));
+      return;
+    }
+
+    bool fsrZeroInit = m_device->adapter()->isAdreno();
+    if (!m_fsr.init(m_vkd, format, fsrZeroInit)) {
       Logger::warn("StarFsr: Failed to initialize FSR pipeline");
+      return;
+    }
+
+    VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    if (m_vkd->vkCreateSemaphore(m_vkd->device(), &semInfo, nullptr, &m_fsrComplete) != VK_SUCCESS) {
+      Logger::warn("StarFsr: Failed to create FSR complete semaphore");
+      destroyFsr();
       return;
     }
 
     VkCommandPoolCreateInfo poolInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     poolInfo.queueFamilyIndex = m_device->queues().graphics.queueFamily;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     if (m_vkd->vkCreateCommandPool(m_vkd->device(), &poolInfo, nullptr, &m_fsrCmdPool) != VK_SUCCESS) {
       Logger::warn("StarFsr: Failed to create command pool");
       destroyFsr();
@@ -1500,22 +1532,28 @@ namespace dxvk {
       m_vkd->vkDestroyCommandPool(m_vkd->device(), m_fsrCmdPool, nullptr);
       m_fsrCmdPool = VK_NULL_HANDLE;
     }
+    if (m_fsrComplete) {
+      m_vkd->vkDestroySemaphore(m_vkd->device(), m_fsrComplete, nullptr);
+      m_fsrComplete = VK_NULL_HANDLE;
+    }
     m_fsr.destroy(m_vkd);
   }
 
-  void Presenter::dispatchFsr(uint32_t imageIndex) {
+  bool Presenter::dispatchFsr(uint32_t imageIndex, VkSemaphore waitSemaphore) {
     if (!m_fsrInitialized || imageIndex >= m_fsrImageViews.size())
-      return;
+      return false;
 
     VkImageView imageView = m_fsrImageViews[imageIndex];
     if (!imageView)
-      return;
+      return false;
 
     VkCommandBuffer cmd = m_fsrCmdBuffer;
+    if (m_vkd->vkResetCommandBuffer(cmd, 0) != VK_SUCCESS)
+      return false;
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (m_vkd->vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
-      return;
+      return false;
 
     VkImage swapImage = m_images[imageIndex]->handle();
     VkExtent2D extent = {
@@ -1573,14 +1611,26 @@ namespace dxvk {
       0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     if (m_vkd->vkEndCommandBuffer(cmd) != VK_SUCCESS)
-      return;
+      return false;
 
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
+    if (waitSemaphore != VK_NULL_HANDLE) {
+      submitInfo.waitSemaphoreCount = 1;
+      submitInfo.pWaitSemaphores = &waitSemaphore;
+      submitInfo.pWaitDstStageMask = &waitStage;
+    }
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &m_fsrComplete;
 
-    if (m_vkd->vkQueueSubmit(m_device->queues().graphics.queueHandle, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    if (m_vkd->vkQueueSubmit(m_device->queues().graphics.queueHandle, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
       Logger::warn("StarFsr: Queue submit failed");
+      return false;
+    }
+
+    return true;
   }
 
 
