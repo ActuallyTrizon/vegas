@@ -1418,17 +1418,6 @@ namespace dxvk::hud {
 
 
   void HudStarEngineItem::update(dxvk::high_resolution_clock::time_point time) {
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(time - m_lastUpdate);
-
-    if (elapsed.count() >= UpdateInterval) {
-      auto& props = m_device->adapter()->deviceProperties().core.properties;
-      uint64_t vramTotal = 0;
-      for (uint32_t i = 0; i < props.memoryHeapCount; i++) {
-        if (props.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
-          vramTotal = props.memoryHeaps[i].size;
-      }
-      m_lastUpdate = time;
-    }
   }
 
 
