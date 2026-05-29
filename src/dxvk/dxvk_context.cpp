@@ -3466,9 +3466,6 @@ void DxvkContext::drawIndexed(
     const Rc<DxvkImageView>&    srcView,
     const VkOffset3D*           srcOffsets,
           VkFilter              filter) {
-    // StarEngine: use cubic filter on Adreno for sharper blits (Feature #7)
-    if (m_device->adapter()->isAdreno() && filter == VK_FILTER_LINEAR)
-      filter = VK_FILTER_CUBIC_IMG;
 
     // Prepare the two images for transfer ops if necessary
     auto dstLayout = dstView->image()->pickLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
