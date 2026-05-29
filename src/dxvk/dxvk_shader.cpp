@@ -546,7 +546,7 @@ namespace dxvk {
     if (m_device->adapter()->isAdreno()) {
       uint32_t tier = m_device->adapter()->getAdrenoTier();
       if (StarEngine::shouldZeroInit(tier))
-        flagsInfo.flags |= VK_PIPELINE_CREATE_2_ENABLE_WORKGROUP_MEMORY_ZERO_INIT_BIT;
+        flagsInfo.flags |= 0x04000000ULL;
     }
 
     VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
