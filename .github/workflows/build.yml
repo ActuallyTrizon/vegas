@@ -1,0 +1,47 @@
+name: Build DXVK (x64 + x32)
+
+on:
+  push:
+    branches:
+      - 'vegas'
+      - 'master'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Build in Fedora container
+        run: |
+          docker pull fedora:latest
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace:rw \
+            -w /workspace \
+            fedora:latest \
+            bash -c "
+              dnf install -y gcc gcc-c++ glslang \
+                mingw32-gcc mingw32-gcc-c++ \
+                mingw32-vulkan-headers mingw32-vulkan-loader \
+                mingw32-spirv-headers \
+                mingw64-gcc mingw64-gcc-c++ \
+                mingw64-vulkan-headers mingw64-vulkan-loader \
+                mingw64-spirv-headers \
+                meson ninja-build &&
+              mkdir -p /workspace/build-output &&
+              bash package-release.sh master /workspace/build-output --no-package --resume
+            "
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-vegas-${{ github.sha }}
+          path: |
+            ${{ github.workspace }}/build-output/dxvk-master/x64
+            ${{ github.workspace }}/build-output/dxvk-master/x32
+          if-no-files-found: error
