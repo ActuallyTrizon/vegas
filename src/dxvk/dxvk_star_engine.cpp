@@ -822,17 +822,17 @@ namespace dxvk {
     return vkd->vkCreateComputePipelines(vkd->device(), VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline) == VK_SUCCESS;
   }
 
-  void StarFsr::dispatch(VkCommandBuffer cmd, VkDescriptorSet descSet,
+  void StarFsr::dispatch(const Rc<vk::DeviceFn>& vkd, VkCommandBuffer cmd, VkDescriptorSet descSet,
                           VkImageView imageView, VkExtent2D extent) const {
     float consts[4] = {
       float(extent.width), float(extent.height),
       1.0f / float(extent.width), 1.0f / float(extent.height)
     };
 
-    vkCmdPushConstants(cmd, m_pipeLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(consts), consts);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeLayout, 0, 1, &descSet, 0, nullptr);
-    vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
+    vkd->vkCmdPushConstants(cmd, m_pipeLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(consts), consts);
+    vkd->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
+    vkd->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeLayout, 0, 1, &descSet, 0, nullptr);
+    vkd->vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
   }
 
 } // namespace dxvk

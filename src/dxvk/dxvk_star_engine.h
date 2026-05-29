@@ -65,7 +65,7 @@ namespace dxvk {
     VkPipelineLayout pipelineLayout() const { return m_pipeLayout; }
     VkPipeline pipeline() const { return m_pipeline; }
 
-    void dispatch(VkCommandBuffer cmd, VkDescriptorSet descSet,
+    void dispatch(const Rc<vk::DeviceFn>& vkd, VkCommandBuffer cmd, VkDescriptorSet descSet,
                   VkImageView imageView, VkExtent2D extent) const;
 
   private:

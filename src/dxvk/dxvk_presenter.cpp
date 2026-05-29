@@ -1535,7 +1535,7 @@ namespace dxvk {
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.layerCount = 1;
 
-    vkCmdPipelineBarrier(cmd,
+    m_vkd->vkCmdPipelineBarrier(cmd,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -1560,14 +1560,14 @@ namespace dxvk {
 
     m_vkd->vkUpdateDescriptorSets(m_vkd->device(), 2, write, 0, nullptr);
 
-    m_fsr.dispatch(cmd, m_fsrDescSet, imageView, extent);
+    m_fsr.dispatch(m_vkd, cmd, m_fsrDescSet, imageView, extent);
 
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = 0;
     barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    vkCmdPipelineBarrier(cmd,
+    m_vkd->vkCmdPipelineBarrier(cmd,
       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
       0, 0, nullptr, 0, nullptr, 1, &barrier);
