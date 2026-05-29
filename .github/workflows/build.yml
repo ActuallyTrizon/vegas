@@ -3,8 +3,7 @@ name: Build DXVK (x64 + x32)
 on:
   push:
     branches:
-      - 'vegas'
-      - 'master'
+      - '**'
   workflow_dispatch:
 
 jobs:
