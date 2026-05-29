@@ -1420,7 +1420,7 @@ namespace dxvk {
     }
 
     VkCommandPoolCreateInfo poolInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
-    poolInfo.queueFamilyIndex = m_device->queues().graphics.family;
+    poolInfo.queueFamilyIndex = m_device->queues().graphics.queueFamily;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     if (m_vkd->vkCreateCommandPool(m_vkd->device(), &poolInfo, nullptr, &m_fsrCmdPool) != VK_SUCCESS) {
       Logger::warn("StarFsr: Failed to create command pool");
@@ -1452,10 +1452,11 @@ namespace dxvk {
       return;
     }
 
+    VkDescriptorSetLayout fsrDescLayout = m_fsr.descriptorSetLayout();
     VkDescriptorSetAllocateInfo setAllocInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
     setAllocInfo.descriptorPool = m_fsrDescPool;
     setAllocInfo.descriptorSetCount = 1;
-    setAllocInfo.pSetLayouts = &m_fsr.descriptorSetLayout();
+    setAllocInfo.pSetLayouts = &fsrDescLayout;
     if (m_vkd->vkAllocateDescriptorSets(m_vkd->device(), &setAllocInfo, &m_fsrDescSet) != VK_SUCCESS) {
       Logger::warn("StarFsr: Failed to allocate descriptor set");
       destroyFsr();
