@@ -406,6 +406,12 @@ namespace dxvk {
     chainProperties(m_extensionsSupported, m_properties);
     vk->vkGetPhysicalDeviceProperties2(adapter, &m_properties.core);
 
+    {
+      int32_t persona = instance.config().getOption<int32_t>("dxvk.starPersona", 0);
+      if (persona >= 1 && persona <= 3)
+        StarEngine::applyGpuMask(m_properties.core.properties, persona);
+    }
+
     m_properties.driverVersion = decodeDriverVersion(
       m_properties.vk12.driverID, m_properties.core.properties.driverVersion);
   }
