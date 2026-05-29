@@ -139,9 +139,9 @@ namespace dxvk {
         if (props.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
             uint64_t realSize = props.memoryHeaps[i].size;
             uint64_t newSize = realSize + extraVram;
-            newSize = std::max(newSize, realSize);
             newSize = std::min(newSize, maxSafeVram);
             newSize = std::min(newSize, realSize * 3ULL);
+            newSize = std::max(newSize, realSize);
             props.memoryHeaps[i].size = newSize;
         }
     }
