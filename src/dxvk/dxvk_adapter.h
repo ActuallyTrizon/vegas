@@ -284,7 +284,7 @@ namespace dxvk {
       const auto& props = m_capabilities.getProperties().core.properties;
       if (props.vendorID == 0x5143) return true;
       constexpr char a[] = {'a','d','r','e','n','o'};
-      for (int i = 0; i < VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 6 && props.deviceName[i]; ++i) {
+      for (uint32_t i = 0; i < VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 6 && props.deviceName[i]; ++i) {
         int j = 0;
         for (; j < 6; ++j) {
           char c = props.deviceName[i + j];
