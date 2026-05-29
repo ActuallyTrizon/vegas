@@ -33,7 +33,7 @@ jobs:
                 mingw64-spirv-headers \
                 meson ninja-build &&
               mkdir -p /workspace/build-output &&
-              bash package-release.sh master /workspace/build-output --no-package --resume
+              bash package-release.sh master /workspace/build-output --no-package
             "
 
       - name: Upload artifact
