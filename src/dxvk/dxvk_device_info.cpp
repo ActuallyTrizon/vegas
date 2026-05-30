@@ -408,8 +408,26 @@ namespace dxvk {
 
     {
       int32_t persona = instance.config().getOption<int32_t>("dxvk.starPersona", 0);
-      if (persona >= 1 && persona <= 3)
+      if (persona >= 1 && persona <= 3) {
         StarEngine::applyGpuMask(m_properties.core.properties, persona);
+      } else {
+        // AUTO: detect Adreno and auto-apply persona based on tier
+        auto& props = m_properties.core.properties;
+        if (props.vendorID == 0x5143) {
+          uint32_t autoPersona = 2;
+          for (const char* c = props.deviceName; *c; ++c) {
+            if (*c >= '0' && *c <= '9') {
+              int num = 0;
+              for (; *c >= '0' && *c <= '9'; ++c) num = num * 10 + (*c - '0');
+              if (num >= 740)      autoPersona = 3;
+              else if (num >= 720) autoPersona = 2;
+              else                 autoPersona = 1;
+              break;
+            }
+          }
+          StarEngine::applyGpuMask(props, autoPersona);
+        }
+      }
     }
 
     m_properties.driverVersion = decodeDriverVersion(
