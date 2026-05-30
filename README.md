@@ -10,6 +10,8 @@
 
 StarEngine features activate on any GPU where `personaTier()` ≥ 1. This happens either automatically on Adreno GPUs, or when the `dxvk.starPersona` config is set. All features can be overridden via `dxvk.conf` or environment variables.
 
+> **💡 No config file needed on Adreno:** All features auto-enable with tier-based defaults. A `dxvk.conf` is only required to override defaults, enable StarEngine on non-Adreno GPUs (via `dxvk.starPersona`), or fine-tune settings for testing.
+
 | # | Feature | Description | Config Key |
 |---|---------|-------------|------------|
 | 1 | **VRAM ROM-Swap** | Inflates device-local heap as % of total system RAM (15-25% based on tier, capped at 2-4 GB). Prevents texture LOD pop-in on shared-memory devices. | `dxvk.starVramMultiplier` |
