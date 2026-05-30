@@ -30,6 +30,7 @@ namespace dxvk {
     starEnableLsfg      = config.getOption<Tristate>("dxvk.starEnableLsfg",       Tristate::Auto);
     starLsfgThresholdMs = config.getOption<float>   ("dxvk.starLsfgThresholdMs",  0.0f);
     starVramMultiplier  = config.getOption<float>   ("dxvk.starVramMultiplier",   0.0f);
+    starZeroInit        = config.getOption<Tristate>("dxvk.starZeroInit",          Tristate::Auto);
   }
 
 }

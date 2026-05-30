@@ -102,6 +102,8 @@ m_starProfile.enabled = false;
 m_starProfile.allowBindSkip = false;
 m_starProfile.drawThreshold = 0;
 
+m_isAdreno = m_device->adapter() ? m_device->adapter()->isAdreno() : false;
+
 initStarProfile(); 
 }
  
@@ -2787,7 +2789,7 @@ void DxvkContext::drawIndexed(
     }
 
     // StarEngine aspect ratio correction (Feature #2)
-    if (viewportCount > 0 && m_device->adapter()->isAdreno()) {
+    if (viewportCount > 0 && m_isAdreno) {
       uint32_t w = uint32_t(m_state.vp.viewports[0].width + 0.5f);
       uint32_t h = uint32_t(m_state.vp.viewports[0].height + 0.5f);
       float sx = 1.0f, sy = 1.0f;

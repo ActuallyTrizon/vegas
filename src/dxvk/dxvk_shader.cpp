@@ -545,7 +545,9 @@ namespace dxvk {
     // StarEngine: zero-initialize shared workgroup memory (Feature #6)
     if (m_device->adapter()->isAdreno()) {
       uint32_t tier = m_device->adapter()->getAdrenoTier();
-      if (StarEngine::shouldZeroInit(tier))
+      auto cfg = m_device->config().starZeroInit;
+      bool zeroInit = (cfg == Tristate::True) || (cfg == Tristate::Auto && StarEngine::shouldZeroInit(tier));
+      if (zeroInit)
         flagsInfo.flags |= 0x04000000ULL;
     }
 

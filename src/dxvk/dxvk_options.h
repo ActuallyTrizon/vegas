@@ -84,6 +84,9 @@ namespace dxvk {
 
     /// StarEngine: VRAM multiplier. 0.0 = per-tier default; 1.0 = real; 2.0 = 2x, etc.
     float starVramMultiplier = 0.0f;
+
+    /// StarEngine: zero-initialize shared workgroup memory. Auto = on for Adreno, off otherwise.
+    Tristate starZeroInit = Tristate::Auto;
   };
 
 }

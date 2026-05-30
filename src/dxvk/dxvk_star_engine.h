@@ -22,7 +22,6 @@ namespace dxvk {
   public:
     static void initializeProfile(uint32_t& threshold, bool& enabled, bool& bindSkip, uint32_t& tier, DxvkDevice* device);
     static void initializeProfile(uint32_t& threshold, bool& enabled, bool& bindSkip, uint32_t& tier, DxvkDevice* device, bool isD3D9);
-    static void tuneThreshold(uint32_t& threshold, float load, float frameTime, uint32_t tier);
     static bool shouldZeroInit(uint32_t tier);
     static void calculateAspectRatio(uint32_t w, uint32_t h, float& outX, float& outY);
     static uint64_t getSystemRamMB();

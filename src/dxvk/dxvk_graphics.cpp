@@ -1075,10 +1075,27 @@ namespace dxvk {
     DxvkGraphicsPipelineInstance* instance = this->findInstance(state);
 
     if (unlikely(!instance)) {
-        // If we are in async mode and the instance doesn't exist yet, 
-        // return empty immediately to skip the stutter.
-        if (async)
+        // If we are in async mode and the instance doesn't exist yet,
+        // create it and queue background compilation, but return empty
+        // so the current frame doesn't stall.
+        if (async) {
+            if (!this->validatePipelineState(state, true))
+                return DxvkGraphicsPipelineHandle();
+
+            std::unique_lock<dxvk::mutex> lock(m_mutex);
+            instance = this->findInstance(state);
+
+            if (!instance) {
+                bool canCreateBasePipeline = this->canCreateBasePipeline(state);
+                instance = this->createInstance(state, canCreateBasePipeline);
+                lock.unlock();
+
+                if (!instance->fastHandle.load())
+                    m_workers->compileGraphicsPipeline(this, state, DxvkPipelinePriority::Low);
+            }
+
             return DxvkGraphicsPipelineHandle();
+        }
 
         // Standard logic for when async is OFF (it will block/freeze until ready)
         if (!this->validatePipelineState(state, true))

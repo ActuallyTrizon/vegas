@@ -835,6 +835,8 @@ private:
         VkPipeline lastBoundVkPipeline = VK_NULL_HANDLE;
     } m_starProfile;
 
+    bool m_isAdreno = false;
+
     std::atomic<uint32_t> m_drawsSinceSubmit{0};  // Thread-safe draw counter
         
     void initStarProfile();

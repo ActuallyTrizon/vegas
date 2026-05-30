@@ -65,26 +65,6 @@ namespace dxvk {
       }
   }
 
-  // VEGAS: STARENGINE - Governor-style tiered threshold (AdrenoGovernor logic)
-  void StarEngine::tuneThreshold(uint32_t& threshold, float load, float frameTime, uint32_t tier) {
-      if (tier == 1) {
-          if (load > 0.90f && frameTime > 25.0f)
-              threshold = 1200;
-          else if (load < 0.60f)
-              threshold = 8000;
-      } else if (tier == 2) {
-          if (load > 0.93f && frameTime > 29.0f)
-              threshold = 1600;
-          else if (load < 0.64f)
-              threshold = 8000;
-      } else {
-          if (load > 0.95f && frameTime > 33.0f)
-              threshold = 2000;
-          else if (load < 0.70f)
-              threshold = 8000;
-      }
-  }
-
   // VEGAS: STARENGINE - ZeroInitShaders = 1 (always enable for Unity/Adreno stability)
   bool StarEngine::shouldZeroInit(uint32_t tier) {
       return true;

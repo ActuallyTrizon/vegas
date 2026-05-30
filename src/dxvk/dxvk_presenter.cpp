@@ -1614,7 +1614,7 @@ namespace dxvk {
     if (m_vkd->vkEndCommandBuffer(cmd) != VK_SUCCESS)
       return false;
 
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
