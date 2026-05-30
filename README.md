@@ -16,10 +16,12 @@ StarEngine features activate on any GPU where `personaTier()` ≥ 1. This happen
 | 2 | **Aspect Ratio Correction** | Automatically letterboxes/pillarboxes the viewport to 16:9 on non-standard displays (tablets, foldables). | — |
 | 3 | **FSR 1.0 (EASU)** | Compute-shader-based upscaler dispatched before presentation. Sharpens swapchain images. | `dxvk.starEnableFsr` |
 | 4 | **LSFG Frame Doubling** | Second `vkQueuePresentKHR` when frame time exceeds threshold, doubling perceived framerate. | `dxvk.starEnableLsfg`, `dxvk.starLsfgThresholdMs` |
-| 5 | **Zero-Mapped Memory** | Forces zero-initialization of mapped buffer allocations, avoiding GPU page faults on Vulkan drivers. | `dxvk.zeroMappedMemory` |
+| 5 | **Zero-Mapped Memory** | Forces zero-initialization of mapped buffer allocations, avoiding GPU page faults on Vulkan drivers. Auto-enabled on Adreno unless user explicitly set the option. | `dxvk.zeroMappedMemory` |
 | 6 | **ZeroInit Shaders** | Zero-initializes workgroup memory in compute shaders via `VK_PIPELINE_CREATE_2_ENABLE_WORKGROUP_MEMORY_ZERO_INIT_BIT`. Fixes Unity engine crashes. | — |
 | 7 | **Adaptive HUD** | Color-coded performance label (Normal/Lagging/Stuttering/Overheating) relative to target frame rate. Shown via `DXVK_HUD=starengine`. | `dxvk.hud = starengine` |
 | 8 | **ASTC Texture Compression** | *(Future — planned for a stable release)* Transcodes BCn→ASTC at texture upload to save ~50-75% bandwidth on Adreno's native TMU. Pipeline is fully implemented but not yet wired into image upload paths. | — |
+| 9 | **Adaptive Draw-Command Flushing** | Counts draws since last command buffer submit. When count exceeds a per-tier threshold (600/1200/2000), spills the render pass and flushes. **Bind-Skip**: Skips redundant `vkCmdBindPipeline` calls when pipeline handle hasn't changed. **AdrenoGovernor**: Dynamically tunes the flush threshold based on GPU load and frame time. **D3D9**: Higher thresholds (1500/3000/5000) for D3D9 titles. | — |
+| 10 | **Async Pipeline Compilation** | Compiles pipelines asynchronously on a worker thread. If a pipeline isn't ready at draw time, the draw call is skipped rather than stalling the render thread. Reduces shader compilation hitches. | `dxvk.enableAsync` |
 
 ### Configuration (`dxvk.conf`)
 
@@ -43,6 +45,20 @@ dxvk.starLsfgThresholdMs  = 0
 # VRAM multiplier. 0 = per-tier default (% of system RAM, capped).
 # 1.0 = report real hardware size. 2.0 = double.
 dxvk.starVramMultiplier   = 0
+
+# Async pipeline compilation (Auto = on if Adreno, off otherwise)
+# Draw calls are skipped if the pipeline isn't ready yet.
+dxvk.enableAsync          = Auto
+```
+
+### Low-level DXGI Options (Persona Masking)
+
+These are the raw options that `dxvk.starPersona` sets internally. Can also be used directly:
+
+```ini
+dxgi.customVendorId       = 0x10DE
+dxgi.customDeviceId       = 0x1C82
+dxgi.customDeviceDesc     = "NVIDIA GeForce GTX 1050 Ti (StarEngine)"
 ```
 
 ### Tier Classification
@@ -57,7 +73,7 @@ dxvk.starVramMultiplier   = 0
 
 When `dxvk.starPersona` is set (or auto-detected), the engine masks the GPU identity to the corresponding NVIDIA model and derives the optimization tier from the persona:
 
-| Persona | Tier | GPU Reported | VRAM Ratio | LSFG | Bind-Skip Threshold |
+| Persona | Tier | GPU Reported | VRAM Ratio | LSFG | Draw Flush Threshold |
 |---------|------|-------------|------------|------|---------------------|
 | 1 | 1 | NVIDIA GeForce GTX 1050 Ti | 15% / 2 GB | off | 600 draws |
 | 2 | 2 | NVIDIA GeForce GTX 1660 | 20% / 3 GB | >29 ms | 1200 draws |
