@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <atomic>
 #include "dxvk_include.h"
 
 namespace dxvk {
@@ -46,6 +47,8 @@ namespace dxvk {
       VkFormat              dstFormat,
       uint32_t              width,
       uint32_t              height);
+
+    static std::atomic<float> s_lastFrameTimeMs;
   };
 
   class StarFsr {

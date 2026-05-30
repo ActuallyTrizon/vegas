@@ -223,6 +223,7 @@ namespace dxvk {
       float frameTime = std::chrono::duration<float, std::milli>(
         now - m_lastPresentTime).count();
       m_lastPresentTime = now;
+      StarEngine::s_lastFrameTimeMs.store(frameTime, std::memory_order_relaxed);
 
       {
         bool lsfgEnabled = false;

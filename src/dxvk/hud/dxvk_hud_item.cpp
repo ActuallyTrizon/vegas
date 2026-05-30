@@ -1418,6 +1418,24 @@ namespace dxvk::hud {
 
 
   void HudStarEngineItem::update(dxvk::high_resolution_clock::time_point time) {
+    uint64_t ticks = std::chrono::duration_cast<std::chrono::microseconds>(time - m_lastUpdate).count();
+
+    if (ticks >= UpdateInterval) {
+      m_frameTimeMs = StarEngine::s_lastFrameTimeMs.load(std::memory_order_relaxed);
+
+      DxvkStatCounters counters = m_device->getStatCounters();
+      uint64_t currGpuIdleTicks = counters.getCtr(DxvkStatCounter::GpuIdleTicks);
+
+      uint64_t diffIdle = currGpuIdleTicks - m_prevGpuIdleTicks;
+      m_prevGpuIdleTicks = currGpuIdleTicks;
+
+      uint64_t busyTicks = ticks > diffIdle
+        ? uint64_t(ticks - diffIdle)
+        : uint64_t(0);
+
+      m_gpuLoad = static_cast<float>(busyTicks) / static_cast<float>(ticks);
+      m_lastUpdate = time;
+    }
   }
 
 
@@ -1431,9 +1449,8 @@ namespace dxvk::hud {
     renderer.drawText(16, position, 0xff00ff00u, m_statusLine);
 
     if (m_device->adapter()->isAdreno()) {
-      // Adaptive performance status (Feature #8)
       float targetFrameTime = 16.667f;
-      auto state = StarEngine::analyzePerformance(0.5f, 16.667f, targetFrameTime);
+      auto state = StarEngine::analyzePerformance(m_gpuLoad, m_frameTimeMs, targetFrameTime);
       uint32_t perfColor = StarEngine::getGraphColor(state);
       const char* perfStr = StarEngine::getStatusString(state);
       perfColor |= 0xff000000u;

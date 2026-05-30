@@ -14,6 +14,8 @@
 
 namespace dxvk {
 
+  std::atomic<float> StarEngine::s_lastFrameTimeMs{0.0f};
+
   void StarEngine::initializeProfile(uint32_t& threshold, bool& enabled, bool& bindSkip, uint32_t& tier, DxvkDevice* device) {
       if (device == nullptr || device->adapter() == nullptr) return;
       auto& props = device->adapter()->deviceProperties().core.properties;
