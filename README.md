@@ -2,51 +2,67 @@
 
 **Version 2.7.3-vegas** — A DXVK fork with Adreno-optimized enhancements for mobile/ARM64 gaming via Wine. Built on the shoulders of the excellent [DXVK](https://github.com/doitsujin/dxvk) project by doitsujin.
 
-> **⚠️ Important:** This is a downstream fork. All improvements specific to this build are additive and fully config-gated — stock DXVK behavior on non-Adreno GPUs is preserved exactly.
+> **⚠️ Important:** This is a downstream fork. All improvements specific to this build are additive and fully config-gated — stock DXVK behavior is preserved when no StarEngine config options are set.
 
 ---
 
 ## StarEngine Features
 
-All StarEngine features activate automatically on Adreno GPUs (vendor ID `0x5143`) and can be overridden via `dxvk.conf` or environment variables.
+StarEngine features activate on any GPU where `personaTier()` ≥ 1. This happens either automatically on Adreno GPUs, or when the `dxvk.starPersona` config is set. All features can be overridden via `dxvk.conf` or environment variables.
 
 | # | Feature | Description | Config Key |
 |---|---------|-------------|------------|
-| 1 | **VRAM ROM-Swap** | Inflates device-local heap as % of total system RAM (25-40% based on tier). Prevents texture LOD pop-in on shared-memory Adreno devices. | `dxvk.starVramMultiplier` |
+| 1 | **VRAM ROM-Swap** | Inflates device-local heap as % of total system RAM (15-25% based on tier, capped at 2-4 GB). Prevents texture LOD pop-in on shared-memory devices. | `dxvk.starVramMultiplier` |
 | 2 | **Aspect Ratio Correction** | Automatically letterboxes/pillarboxes the viewport to 16:9 on non-standard displays (tablets, foldables). | — |
-| 3 | **FSR 1.0 (EASU)** | Compute-shader-based upscaler dispatched before presentation. Sharpens swapchain images on Adreno. | `dxvk.starEnableFsr` |
+| 3 | **FSR 1.0 (EASU)** | Compute-shader-based upscaler dispatched before presentation. Sharpens swapchain images. | `dxvk.starEnableFsr` |
 | 4 | **LSFG Frame Doubling** | Second `vkQueuePresentKHR` when frame time exceeds threshold, doubling perceived framerate. | `dxvk.starEnableLsfg`, `dxvk.starLsfgThresholdMs` |
-| 5 | **Zero-Mapped Memory** | Forces zero-initialization of mapped buffer allocations, avoiding GPU page faults on Qualcomm drivers. | `dxvk.zeroMappedMemory` |
-| 6 | **ZeroInit Shaders** | Zero-initializes workgroup memory in compute shaders via `VK_PIPELINE_CREATE_2_ENABLE_WORKGROUP_MEMORY_ZERO_INIT_BIT`. Fixes Unity engine crashes on Adreno. | — |
-| 7 | **HAAE Quality Scaling** | Upgrades blit filter from bilinear to cubic (`VK_FILTER_CUBIC_IMG`) for sharper output when FSR is inactive. | — |
-| 8 | **Adaptive HUD** | Color-coded performance label (Normal/Lagging/Stuttering/Overheating) relative to target frame rate. Shown via `DXVK_HUD=starengine`. | `dxvk.hud = starengine` |
-| 9 | **ASTC Texture Compression** | *(Future — planned for a stable release)* Transcodes BCn→ASTC at texture upload to save ~50-75% bandwidth on Adreno's native TMU. | — |
+| 5 | **Zero-Mapped Memory** | Forces zero-initialization of mapped buffer allocations, avoiding GPU page faults on Vulkan drivers. | `dxvk.zeroMappedMemory` |
+| 6 | **ZeroInit Shaders** | Zero-initializes workgroup memory in compute shaders via `VK_PIPELINE_CREATE_2_ENABLE_WORKGROUP_MEMORY_ZERO_INIT_BIT`. Fixes Unity engine crashes. | — |
+| 7 | **Adaptive HUD** | Color-coded performance label (Normal/Lagging/Stuttering/Overheating) relative to target frame rate. Shown via `DXVK_HUD=starengine`. | `dxvk.hud = starengine` |
+| 8 | **ASTC Texture Compression** | *(Future — planned for a stable release)* Transcodes BCn→ASTC at texture upload to save ~50-75% bandwidth on Adreno's native TMU. Pipeline is fully implemented but not yet wired into image upload paths. | — |
 
 ### Configuration (`dxvk.conf`)
 
 ```ini
-# FSR 1.0 upscaler (Auto = on if Adreno, off otherwise)
-dxvk.starEnableFsr       = Auto
+# GPU identity persona. 0 = AUTO (detect from real GPU).
+# 1 = GTX 1050 Ti, 2 = GTX 1660, 3 = RTX 3060 Laptop.
+# AUTO mode reads the real Adreno model number and self-masks to
+# the matching NVIDIA persona with correct tier optimizations.
+dxvk.starPersona          = 0
 
-# LSFG frame doubling (Auto = on if Adreno, off otherwise)
-dxvk.starEnableLsfg      = Auto
+# FSR 1.0 upscaler (Auto = on if persona/tier enabled, off otherwise)
+dxvk.starEnableFsr        = Auto
 
-# LSFG minimum frame time in ms before doubling triggers.
-# 0 = per-tier default (600/1200/2000 ms for tiers 1/2/3)
-dxvk.starLsfgThresholdMs = 0
+# LSFG frame doubling (Auto = on if persona/tier enabled, off otherwise)
+dxvk.starEnableLsfg       = Auto
 
-# VRAM multiplier. 0 = per-tier default (% of system RAM).
+# LSFG frame time threshold in ms before doubling triggers.
+# 0 = per-tier default (off for tier 1, >29 ms for tier 2, >33 ms for tier 3)
+dxvk.starLsfgThresholdMs  = 0
+
+# VRAM multiplier. 0 = per-tier default (% of system RAM, capped).
 # 1.0 = report real hardware size. 2.0 = double.
-dxvk.starVramMultiplier  = 0
+dxvk.starVramMultiplier   = 0
 ```
 
-### Adreno Tier Classification
+### Tier Classification
 
-| Tier | Models | VRAM % | LSFG Threshold | ZeroInit | HAAE |
-|------|--------|--------|----------------|----------|------|
-| 1 (Budget) | Adreno 6xx (610, 618-630) | 25% | Disabled | Enabled | Cubic |
-| 2 (Mid) | Adreno 640-730 | 33% | >29 ms | Enabled | Cubic |
-| 3 (Elite) | Adreno 740+ | 40% | >33 ms | Enabled | Cubic |
+| Tier | Models | VRAM % (cap) | LSFG Threshold | ZeroInit |
+|------|--------|--------------|----------------|----------|
+| 1 (Budget) | Adreno 6xx (610, 618–719) | 15% (up to 2 GB) | Disabled | Enabled |
+| 2 (Mid)   | Adreno 720–739 | 20% (up to 3 GB) | >29 ms | Enabled |
+| 3 (Elite) | Adreno 740+    | 25% (up to 4 GB) | >33 ms | Enabled |
+
+### Persona Masking
+
+When `dxvk.starPersona` is set (or auto-detected), the engine masks the GPU identity to the corresponding NVIDIA model and derives the optimization tier from the persona:
+
+| Persona | Tier | GPU Reported | VRAM Ratio | LSFG | Bind-Skip Threshold |
+|---------|------|-------------|------------|------|---------------------|
+| 1 | 1 | NVIDIA GeForce GTX 1050 Ti | 15% / 2 GB | off | 600 draws |
+| 2 | 2 | NVIDIA GeForce GTX 1660 | 20% / 3 GB | >29 ms | 1200 draws |
+| 3 | 3 | NVIDIA GeForce RTX 3060 Laptop | 25% / 4 GB | >33 ms | 2000 draws |
+| AUTO | auto | Matches real Adreno class | per matched tier | per matched tier | per matched tier |
 
 ### Adaptive HUD Colors
 
@@ -131,7 +147,7 @@ The `DXVK_HUD` environment variable controls a HUD which can display the framera
 - `samplers`: Shows the current number of sampler pairs used *[D3D9 Only]*
 - `ffshaders`: Shows the current number of shaders generated from fixed function state *[D3D9 Only]*
 - `swvp`: Shows whether or not the device is running in software vertex processing mode *[D3D9 Only]*
-- `starengine`: Shows StarEngine version, Adreno tier, FSR/LSFG status, and VRAM configuration *[StarEngine]*
+- `starengine`: Shows StarEngine version, tier, persona, FSR/LSFG status, and VRAM configuration *[StarEngine]*
 - `scale=x`: Scales the HUD by a factor of `x` (e.g. `1.5`)
 - `opacity=y`: Adjusts the HUD opacity by a factor of `y` (e.g. `0.5`, `1.0` being fully opaque).
 
