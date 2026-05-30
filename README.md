@@ -279,3 +279,5 @@ DXVK Native comes with a slim set of Windows header definitions required for D3D
 ---
 
 *StarEngine (Vegas Edition) is a downstream fork of DXVK. All upstream credit belongs to the DXVK contributors.*
+
+> **For developers:** See [`DEV_README.md`](DEV_README.md) for the complete file-by-file mapping of all StarEngine changes — every modified function, line number, and feature.
