@@ -11,6 +11,8 @@
 
 #include "../dxvk/dxvk_adapter.h"
 #include "../dxvk/dxvk_instance.h"
+#include "../dxvk/dxvk_star_engine.h"
+
 #include "d3d11_buffer.h"
 #include "d3d11_class_linkage.h"
 #include "d3d11_context_def.h"
@@ -243,7 +245,46 @@ namespace dxvk {
       Com<D3D11Texture2D> texture = new D3D11Texture2D(this, &desc, nullptr, nullptr);
       auto* texCommon = texture->GetCommonTexture();
 
-      m_initializer->InitTexture(texCommon, pInitialData);
+      if (pInitialData && texCommon->IsAstcTranscoded()) {
+        UINT mipLevels = desc.MipLevels;
+        UINT arraySize = desc.ArraySize;
+        UINT numSub = mipLevels * arraySize;
+        VkFormat srcFmt = texCommon->GetOriginalFormat();
+        VkFormat dstFmt = StarEngine::getAstcFormat(srcFmt);
+
+        auto* transData = new D3D11_SUBRESOURCE_DATA[numSub];
+        auto srcInfo = lookupFormatInfo(srcFmt);
+        auto dstInfo = lookupFormatInfo(dstFmt);
+
+        for (UINT slice = 0; slice < arraySize; slice++) {
+          for (UINT mip = 0; mip < mipLevels; mip++) {
+            UINT idx = slice * mipLevels + mip;
+            UINT mipW = std::max(desc.Width >> mip, 1u);
+            UINT mipH = std::max(desc.Height >> mip, 1u);
+
+            VkExtent3D srcBlk = util::computeBlockCount({mipW, mipH, 1}, srcInfo->blockSize);
+            VkExtent3D dstBlk = util::computeBlockCount({mipW, mipH, 1}, dstInfo->blockSize);
+
+            size_t dstBytes = dstBlk.width * dstBlk.height * dstInfo->elementSize;
+            auto* dstBuf = new uint8_t[dstBytes];
+
+            StarEngine::transcodeImageData(dstBuf, pInitialData[idx].pSysMem,
+              srcFmt, dstFmt, mipW, mipH);
+
+            transData[idx].pSysMem = dstBuf;
+            transData[idx].SysMemPitch = UINT(dstBlk.width * dstInfo->elementSize);
+            transData[idx].SysMemSlicePitch = UINT(dstBytes);
+          }
+        }
+
+        m_initializer->InitTexture(texCommon, transData);
+
+        for (UINT i = 0; i < numSub; i++)
+          delete[] static_cast<const uint8_t*>(transData[i].pSysMem);
+        delete[] transData;
+      } else {
+        m_initializer->InitTexture(texCommon, pInitialData);
+      }
 
       *ppTexture2D = texture.ref();
       return S_OK;

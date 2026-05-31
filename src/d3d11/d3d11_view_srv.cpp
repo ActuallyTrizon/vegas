@@ -4,6 +4,8 @@
 #include "d3d11_texture.h"
 #include "d3d11_view_srv.h"
 
+#include "../dxvk/dxvk_star_engine.h"
+
 namespace dxvk {
   
   D3D11ShaderResourceView::D3D11ShaderResourceView(
@@ -74,6 +76,14 @@ namespace dxvk {
     } else {
       auto texture = GetCommonTexture(pResource);
       auto formatInfo = pDevice->LookupFormat(pDesc->Format, texture->GetFormatMode());
+
+      if (texture->IsAstcTranscoded()) {
+        VkFormat astc = StarEngine::getAstcFormat(formatInfo.Format);
+        if (astc != VK_FORMAT_UNDEFINED) {
+          formatInfo.Format = astc;
+          formatInfo.Aspect = lookupFormatInfo(astc)->aspectMask;
+        }
+      }
       
       DxvkImageViewKey viewInfo;
       viewInfo.format = formatInfo.Format;

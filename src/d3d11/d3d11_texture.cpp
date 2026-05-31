@@ -3,6 +3,8 @@
 #include "d3d11_gdi.h"
 #include "d3d11_texture.h"
 
+#include "../dxvk/dxvk_star_engine.h"
+
 #include "../util/util_shared_res.h"
 #include "../util/util_win32_compat.h"
 
@@ -24,6 +26,35 @@ namespace dxvk {
     DXGI_VK_FORMAT_FAMILY formatFamily = m_device->LookupFamily(m_desc.Format, formatMode);
     DXGI_VK_FORMAT_INFO   formatPacked = m_device->LookupPackedFormat(m_desc.Format, formatMode);
     m_packedFormat = formatPacked.Format;
+
+    if (Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE3D
+     && StarEngine::shouldTranscodeToAstc(m_device->GetDXVKDevice().ptr())) {
+      DXGI_VK_FORMAT_INFO rawInfo = m_device->LookupRawFormat(m_desc.Format, formatMode);
+      VkImageUsageFlags approxUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      if (m_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+        approxUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+      if (m_desc.BindFlags & D3D11_BIND_RENDER_TARGET)
+        approxUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+      if (m_desc.BindFlags & D3D11_BIND_DEPTH_STENCIL)
+        approxUsage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      if (m_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS)
+        approxUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+
+      VkFormat astcFormat = StarEngine::shouldTranscodeFormat(
+        rawInfo.Format, approxUsage,
+        VkExtent3D{ m_desc.Width, m_desc.Height, m_desc.Depth },
+        m_device->GetDXVKDevice()->adapter());
+
+      if (astcFormat != VK_FORMAT_UNDEFINED) {
+        m_originalFormat = rawInfo.Format;
+        formatInfo.Format = astcFormat;
+        m_astcTranscoded = true;
+        DXGI_VK_FORMAT_FAMILY astcFamily;
+        astcFamily.Add(astcFormat);
+        formatFamily = astcFamily;
+      }
+    }
 
     DxvkImageCreateInfo imageInfo;
     imageInfo.type            = GetVkImageType();
