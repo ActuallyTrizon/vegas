@@ -44,7 +44,7 @@ namespace dxvk {
       VkFormat astcFormat = StarEngine::shouldTranscodeFormat(
         rawInfo.Format, approxUsage,
         VkExtent3D{ m_desc.Width, m_desc.Height, m_desc.Depth },
-        m_device->GetDXVKDevice()->adapter());
+        m_desc.MipLevels);
 
       if (astcFormat != VK_FORMAT_UNDEFINED) {
         m_originalFormat = rawInfo.Format;

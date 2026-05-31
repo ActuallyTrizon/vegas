@@ -36,7 +36,7 @@ namespace dxvk {
       VkFormat              originalFormat,
       VkImageUsageFlags     usage,
       VkExtent3D            extent,
-      const Rc<DxvkAdapter>& adapter);
+      uint32_t              mipLevels);
     static bool formatIsBcn(VkFormat format);
     static VkFormat getAstcFormat(VkFormat bcnFormat);
     static void transcodeImageData(
@@ -47,6 +47,15 @@ namespace dxvk {
       uint32_t              width,
       uint32_t              height);
 
+    static bool shouldMergeDraws(const DxvkDevice* device);
+    static bool shouldCoalesceBarriers(const DxvkDevice* device);
+    static float getAdaptiveScale(const DxvkDevice* device, float frameTimeMs);
+    static bool shouldTranscodeToAstc(const DxvkDevice* device);
+    static uint32_t getStagingRingSizeMb(const DxvkDevice* device);
+    static bool shouldOptimizeSubgroup(const DxvkDevice* device);
+    static bool shouldEnableQcom(const DxvkDevice* device);
+
+    static std::atomic<float> s_avgFrameTimeMs;
     static std::atomic<float> s_lastFrameTimeMs;
   };
 

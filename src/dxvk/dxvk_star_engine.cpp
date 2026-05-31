@@ -15,6 +15,7 @@
 namespace dxvk {
 
   std::atomic<float> StarEngine::s_lastFrameTimeMs{0.0f};
+  std::atomic<float> StarEngine::s_avgFrameTimeMs{0.0f};
 
   void StarEngine::initializeProfile(uint32_t& threshold, bool& enabled, bool& bindSkip, uint32_t& tier, DxvkDevice* device) {
       if (device == nullptr || device->adapter() == nullptr) return;
@@ -238,88 +239,39 @@ namespace dxvk {
   }
 
   VkFormat StarEngine::getAstcFormat(VkFormat bcnFormat) {
-    switch (bcnFormat) {
-      // BC1 -> ASTC 6x6 (best density, similar bitrate)
-      case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
-      case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
-      case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-      case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-        return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
-
-      // BC2 -> ASTC 5x5 (better quality at ~same bitrate)
-      case VK_FORMAT_BC2_UNORM_BLOCK:
-        return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
-      case VK_FORMAT_BC2_SRGB_BLOCK:
-        return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
-
-      // BC3 -> ASTC 5x5 (1.5x savings, best target)
-      case VK_FORMAT_BC3_UNORM_BLOCK:
-        return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
-      case VK_FORMAT_BC3_SRGB_BLOCK:
-        return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
-
-      // BC4 (single channel) -> ASTC 6x6
-      case VK_FORMAT_BC4_UNORM_BLOCK:
-      case VK_FORMAT_BC4_SNORM_BLOCK:
-        return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
-
-      // BC5 (normal maps) -> ASTC 5x5
-      case VK_FORMAT_BC5_UNORM_BLOCK:
-      case VK_FORMAT_BC5_SNORM_BLOCK:
-        return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
-
-      // BC6H (HDR) -> skip, no good ASTC HDR match
-      case VK_FORMAT_BC6H_UFLOAT_BLOCK:
-      case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-        return VK_FORMAT_UNDEFINED;
-
-      // BC7 -> ASTC 5x5 (1.5x savings)
-      case VK_FORMAT_BC7_UNORM_BLOCK:
-        return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
-      case VK_FORMAT_BC7_SRGB_BLOCK:
-        return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
-
-      default:
-        return VK_FORMAT_UNDEFINED;
-    }
+    if (bcnFormat == VK_FORMAT_BC7_UNORM_BLOCK)
+      return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
+    if (bcnFormat == VK_FORMAT_BC7_SRGB_BLOCK)
+      return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
+    return VK_FORMAT_UNDEFINED;
   }
 
   VkFormat StarEngine::shouldTranscodeFormat(
       VkFormat              originalFormat,
       VkImageUsageFlags     usage,
       VkExtent3D            extent,
-      const Rc<DxvkAdapter>& adapter) {
-    // Guard: skip render targets, depth/stencil, storage images
+      uint32_t              mipLevels) {
+    // 1. Format Filter: BC7 only
+    if (originalFormat != VK_FORMAT_BC7_UNORM_BLOCK
+     && originalFormat != VK_FORMAT_BC7_SRGB_BLOCK)
+      return VK_FORMAT_UNDEFINED;
+
+    // 2. Skip render targets, depth/stencil, storage images
     if (usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                  VK_IMAGE_USAGE_STORAGE_BIT))
       return VK_FORMAT_UNDEFINED;
 
-    // Guard: skip small images (UI/icons/fonts < 512 KB)
-    uint64_t pixelCount = uint64_t(extent.width) * extent.height * std::max(extent.depth, 1u);
-    uint64_t totalBytes = pixelCount * 4; // approximate at 4 bytes/pixel worst case
-    if (totalBytes < (512u * 1024u))
+    // 3. High-Bandwidth Size Threshold: >= 1024x1024
+    if (extent.width < 1024 || extent.height < 1024)
       return VK_FORMAT_UNDEFINED;
 
-    // Guard: only compress BCn formats
-    if (!formatIsBcn(originalFormat))
+    // 4. Mip-Integrity: lowest mip must be >= 8px in both dimensions
+    uint32_t minDimAtLowestMip = std::min(extent.width, extent.height) >> (mipLevels - 1);
+    if (mipLevels > 1 && minDimAtLowestMip < 8)
       return VK_FORMAT_UNDEFINED;
 
-    // Guard: skip BC6H (HDR) - no good ASTC HDR match
-    if (originalFormat == VK_FORMAT_BC6H_UFLOAT_BLOCK ||
-        originalFormat == VK_FORMAT_BC6H_SFLOAT_BLOCK)
-      return VK_FORMAT_UNDEFINED;
-
-    // Guard: check device supports the target ASTC format
-    VkFormat astcFormat = getAstcFormat(originalFormat);
-    if (astcFormat == VK_FORMAT_UNDEFINED)
-      return VK_FORMAT_UNDEFINED;
-
-    VkFormatFeatureFlags2 features = adapter->getFormatFeatures(astcFormat).optimal;
-    if (!(features & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT))
-      return VK_FORMAT_UNDEFINED;
-
-    return astcFormat;
+    return getAstcFormat(originalFormat);
   }
 
   // ============================================================
@@ -830,6 +782,77 @@ namespace dxvk {
     vkd->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
     vkd->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeLayout, 0, 1, &descSet, 0, nullptr);
     vkd->vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
+  }
+
+
+  bool StarEngine::shouldMergeDraws(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return false;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starMergeDraws", Tristate::Auto);
+    if (setting == Tristate::True) return true;
+    if (setting == Tristate::False) return false;
+    return device->adapter()->isAdreno();
+  }
+
+  bool StarEngine::shouldCoalesceBarriers(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return false;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starCoalesceBarriers", Tristate::Auto);
+    if (setting == Tristate::True) return true;
+    if (setting == Tristate::False) return false;
+    return device->adapter()->isAdreno();
+  }
+
+  float StarEngine::getAdaptiveScale(const DxvkDevice* device, float frameTimeMs) {
+    if (!device || !device->adapter()) return 1.0f;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starAdaptiveResScale", Tristate::Auto);
+    if (setting == Tristate::False) return 1.0f;
+    if (!device->adapter()->isAdreno() && setting != Tristate::True) return 1.0f;
+
+    s_avgFrameTimeMs.store(frameTimeMs);
+
+    if (frameTimeMs <= 16.0f) return 1.0f;
+    if (frameTimeMs <= 25.0f) return 0.875f;
+    if (frameTimeMs <= 33.0f) return 0.75f;
+    if (frameTimeMs <= 50.0f) return 0.625f;
+    return 0.5f;
+  }
+
+  bool StarEngine::shouldTranscodeToAstc(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return false;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starAstcTranscode", Tristate::Auto);
+    if (setting == Tristate::True) return true;
+    if (setting == Tristate::False) return false;
+    return device->adapter()->isAdreno();
+  }
+
+  uint32_t StarEngine::getStagingRingSizeMb(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return 0;
+    auto& opt = device->instance()->config();
+    int32_t setting = opt.getOption<int32_t>("dxvk.starStagingRingMb", 0);
+    if (setting > 0) return uint32_t(setting);
+    if (!device->adapter()->isAdreno()) return 0;
+    return 64;
+  }
+
+  bool StarEngine::shouldOptimizeSubgroup(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return false;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starTurnipSubgroupOpt", Tristate::Auto);
+    if (setting == Tristate::True) return true;
+    if (setting == Tristate::False) return false;
+    return device->adapter()->isAdreno();
+  }
+
+  bool StarEngine::shouldEnableQcom(const DxvkDevice* device) {
+    if (!device || !device->adapter()) return false;
+    auto& opt = device->instance()->config();
+    auto setting = opt.getOption<Tristate>("dxvk.starEnableQcom", Tristate::Auto);
+    if (setting == Tristate::True) return true;
+    if (setting == Tristate::False) return false;
+    return device->adapter()->isAdreno();
   }
 
 } // namespace dxvk
