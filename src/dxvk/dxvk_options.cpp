@@ -31,6 +31,13 @@ namespace dxvk {
     starLsfgThresholdMs = config.getOption<float>   ("dxvk.starLsfgThresholdMs",  0.0f);
     starVramMultiplier  = config.getOption<float>   ("dxvk.starVramMultiplier",   0.0f);
     starZeroInit        = config.getOption<Tristate>("dxvk.starZeroInit",          Tristate::Auto);
+    starMergeDraws      = config.getOption<Tristate>("dxvk.starMergeDraws",        Tristate::Auto);
+    starCoalesceBarriers = config.getOption<Tristate>("dxvk.starCoalesceBarriers", Tristate::Auto);
+    starAdaptiveResScale = config.getOption<Tristate>("dxvk.starAdaptiveResScale", Tristate::Auto);
+    starAstcTranscode   = config.getOption<Tristate>("dxvk.starAstcTranscode",    Tristate::Auto);
+    starStagingRingMb   = config.getOption<int32_t> ("dxvk.starStagingRingMb",    0);
+    starTurnipSubgroupOpt = config.getOption<Tristate>("dxvk.starTurnipSubgroupOpt", Tristate::Auto);
+    starEnableQcom      = config.getOption<Tristate>("dxvk.starEnableQcom",        Tristate::Auto);
   }
 
 }

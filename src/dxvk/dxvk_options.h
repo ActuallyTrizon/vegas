@@ -87,6 +87,27 @@ namespace dxvk {
 
     /// StarEngine: zero-initialize shared workgroup memory. Auto = on for Adreno, off otherwise.
     Tristate starZeroInit = Tristate::Auto;
+
+    /// StarEngine: merge adjacent draws with identical state
+    Tristate starMergeDraws = Tristate::Auto;
+
+    /// StarEngine: coalesce adjacent barriers
+    Tristate starCoalesceBarriers = Tristate::Auto;
+
+    /// StarEngine: adaptive resolution scaling
+    Tristate starAdaptiveResScale = Tristate::Auto;
+
+    /// StarEngine: transcode BCn to ASTC on Adreno
+    Tristate starAstcTranscode = Tristate::Auto;
+
+    /// StarEngine: staging ring buffer size in MB
+    int32_t starStagingRingMb = 0;
+
+    /// StarEngine: Turnip subgroup size optimization
+    Tristate starTurnipSubgroupOpt = Tristate::Auto;
+
+    /// StarEngine: enable QCOM vendor extensions
+    Tristate starEnableQcom = Tristate::Auto;
   };
 
 }
