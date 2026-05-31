@@ -441,6 +441,10 @@ namespace dxvk {
     DXGI_VK_FORMAT_INFO LookupFormat(
             DXGI_FORMAT           Format,
             DXGI_VK_FORMAT_MODE   Mode) const;
+
+    DXGI_VK_FORMAT_INFO LookupRawFormat(
+            DXGI_FORMAT           Format,
+            DXGI_VK_FORMAT_MODE   Mode) const;
     
     DXGI_VK_FORMAT_INFO LookupPackedFormat(
             DXGI_FORMAT           Format,

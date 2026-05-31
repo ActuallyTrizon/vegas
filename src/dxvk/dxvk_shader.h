@@ -132,6 +132,9 @@ namespace dxvk {
     /// Whether dynamic non-uniform resource indexing is
     /// supported. Only applies to typed resources.
     SupportsResourceIndexing    = 20u,
+    /// Whether VK_EXT_subgroup_size_control is supported
+    /// on the device, allowing explicit subgroup size.
+    SupportsSubgroupSizeControl = 21u,
   };
 
   using DxvkShaderSpirvFlags = Flags<DxvkShaderSpirvFlag>;

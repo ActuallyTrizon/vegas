@@ -249,7 +249,23 @@ namespace dxvk {
     Rc<DxvkImage> GetImage() const {
       return m_image;
     }
-    
+
+    /**
+     * \brief Checks if texture was transcoded to ASTC
+     * \returns \c true if format was changed to ASTC
+     */
+    bool IsAstcTranscoded() const {
+      return m_astcTranscoded;
+    }
+
+    /**
+     * \brief Original format before ASTC transcode
+     * \returns Original VkFormat, or UNDEFINED if not transcoded
+     */
+    VkFormat GetOriginalFormat() const {
+      return m_originalFormat;
+    }
+
     /**
      * \brief Mapped subresource buffer
      * 
@@ -581,6 +597,8 @@ namespace dxvk {
     D3D11_COMMON_TEXTURE_MAP_MODE m_mapMode;
     DXGI_USAGE                    m_dxgiUsage;
     VkFormat                      m_packedFormat;
+    VkFormat                      m_originalFormat = VK_FORMAT_UNDEFINED;
+    bool                          m_astcTranscoded = false;
     
     Rc<DxvkImage>                 m_image;
     small_vector<MappedBuffer, 6> m_buffers;

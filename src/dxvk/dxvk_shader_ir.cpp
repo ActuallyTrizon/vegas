@@ -1702,7 +1702,46 @@ namespace dxvk {
     dxbc_spv::spirv::SpirvBuilder spirvBuilder(irBuilder, mapping, options);
     spirvBuilder.buildSpirvBinary();
 
-    return SpirvCodeBuffer(spirvBuilder.getSpirvBinary());
+    SpirvCodeBuffer code(spirvBuilder.getSpirvBinary());
+
+    // Turnip compute shader subgroup size optimization
+    if (m_metadata.stage == VK_SHADER_STAGE_COMPUTE_BIT
+     && m_info.options.spirv.test(DxvkShaderSpirvFlag::SupportsSubgroupSizeControl)) {
+      bool hasGroupNonUniform = false;
+      uint32_t entryPointId = 0;
+      size_t lastCapEnd = 5;
+      size_t entryEnd = 0;
+
+      for (auto it = code.begin(); it != code.end(); ++it) {
+        auto ins = *it;
+        if (ins.opCode() == spv::OpCapability && ins.length() >= 2) {
+          lastCapEnd = ins.offset() + ins.length();
+          uint32_t cap = ins.arg(1);
+          if (cap >= 305 && cap <= 312)
+            hasGroupNonUniform = true;
+        } else if (ins.opCode() == spv::OpEntryPoint && ins.length() >= 2) {
+          entryPointId = ins.arg(1);
+          entryEnd = ins.offset() + ins.length();
+          break;
+        }
+      }
+
+      if (hasGroupNonUniform && entryPointId) {
+        code.beginInsertion(lastCapEnd);
+        code.putIns(spv::OpCapability, 2);
+        code.putWord(4427);
+        code.endInsertion();
+
+        code.beginInsertion(entryEnd + 2);
+        code.putIns(spv::OpExecutionMode, 4);
+        code.putWord(entryPointId);
+        code.putWord(35);
+        code.putWord(64);
+        code.endInsertion();
+      }
+    }
+
+    return code;
   }
 
 

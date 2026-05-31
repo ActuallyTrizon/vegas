@@ -11,7 +11,6 @@
 
 #include "../dxvk/dxvk_adapter.h"
 #include "../dxvk/dxvk_instance.h"
-
 #include "d3d11_buffer.h"
 #include "d3d11_class_linkage.h"
 #include "d3d11_context_def.h"
@@ -242,7 +241,10 @@ namespace dxvk {
     
     try {
       Com<D3D11Texture2D> texture = new D3D11Texture2D(this, &desc, nullptr, nullptr);
-      m_initializer->InitTexture(texture->GetCommonTexture(), pInitialData);
+      auto* texCommon = texture->GetCommonTexture();
+
+      m_initializer->InitTexture(texCommon, pInitialData);
+
       *ppTexture2D = texture.ref();
       return S_OK;
     } catch (const DxvkError& e) {
@@ -1986,6 +1988,12 @@ namespace dxvk {
           DXGI_VK_FORMAT_MODE   Mode) const {
     return m_d3d11Formats.GetFormatInfo(Format, Mode);
   }
+
+  DXGI_VK_FORMAT_INFO D3D11Device::LookupRawFormat(
+          DXGI_FORMAT           Format,
+          DXGI_VK_FORMAT_MODE   Mode) const {
+    return m_d3d11Formats.GetFormatInfo(Format, Mode);
+  }
   
   
   DXGI_VK_FORMAT_INFO D3D11Device::LookupPackedFormat(
@@ -2758,6 +2766,9 @@ namespace dxvk {
 
     if (Options.forceSampleRateShading)
       result.flags.set(DxvkShaderCompileFlag::EnableSampleRateShading);
+
+    if (StarEngine::shouldOptimizeSubgroup(Device.ptr()))
+      result.spirv.set(DxvkShaderSpirvFlag::SupportsSubgroupSizeControl);
 
     return result;
   }
