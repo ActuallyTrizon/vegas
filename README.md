@@ -1,95 +1,181 @@
-<img width="1152" height="768" alt="STAR-ENGINE-DXVK" src="https://github.com/user-attachments/assets/93a4ce07-1e87-4bf5-a528-e0b99be02c44" />
+# DXVK
 
-# 🌟 STAR ENGINE: DXVK v2.7.2.1 (HAAE Update)
-### **Adaptive High-Performance DXVK Fork for Android Emulation**
+A Vulkan-based translation layer for Direct3D 8/9/10/11 which allows running 3D applications on Linux using Wine.
 
-**STAR ENGINE** is a specialized performance modification of DXVK designed specifically for **Qualcomm Adreno GPUs** in mobile environments (Star Emulator, Winlator, Mobox). This fork prioritizes **Frame Pacing Stability** and **Driver Survival** over raw, stuttery peak FPS.
+For the current status of the project, please refer to the [project wiki](https://github.com/doitsujin/dxvk/wiki).
 
----
+The most recent development builds can be found [here](https://github.com/doitsujin/dxvk/actions/workflows/artifacts.yml?query=branch%3Amaster).
 
-## 🆕 What's New in v2.7.2.1
+Release builds can be found [here](https://github.com/doitsujin/dxvk/releases).
 
-### 🤖 Adaptive Command Stream (Auto-Threshold)(Experimental/not yet implented for use yet but will be in v2.7.3)
-The engine now features real-time frame telemetry monitoring to balance performance and safety automatically.
-* **Dynamic Pacing:** Automatically adjusts the Mid-Frame Flush threshold based on GPU load.
-* **Smart Performance:** High-FPS scenes allow larger command batches, while heavy scenes trigger frequent flushes to prevent **Adreno Driver Hangs**.
+## How to use
+In order to install a DXVK package obtained from the [release](https://github.com/doitsujin/dxvk/releases) page into a given wine prefix, copy or symlink the DLLs into the following directories as follows, then open `winecfg` and manually add `native` DLL overrides for `d3d8`, `d3d9`, `d3d10core`, `d3d11` and `dxgi` under the Libraries tab.
 
-### 🖼️ Tiered Adaptive Scaling (HAAE Vision)
-Implemented a hardware-aware upscaling layer to reclaim performance lost to mobile resolution bottlenecks.
-* **Performance Tier:** Uses optimized Linear Blit for low-end GPUs (SD6xx).
-* **Quality Tier:** Triggers **Cubic Reconstruction** for high-end GPUs (SD7xx/8xx) when performance headroom exists.
-* **Resolution Fix:** Improved handshake between D3D swapchains and Android displays to fix resolution mismatches in legacy titles.
-
-### 🛠️ Unity Engine "Initialization" Fixes
-Added core DXVK patches to solve the common **"Failed to initialize 3D engine"** errors.
-* **Shader Zero-Init:** Prevents Unity from reading garbage memory, fixing splash-screen crashes.
-* **D3D11 Modernization:** Implementation of `ID3DDestructionNotifier` and improved Planar Video paths for modern Unity titles.
-
----
-
-## 🚀 Key Technical Features
-* **Dynamic-State-Aware Bind-Skip:** Reduces CPU overhead by skipping redundant pipeline calls unless dynamic states (viewports/scissors) change.
-* **Mid-Frame Command Flushing:** Prevents command buffer overflows—a critical fix for Adreno 610/642L/7xx/8xx GPUs.
-* **Android-Native Storage Support:** Intelligent configuration loading from common Android paths for easier setup on mobile devices.
-
----
-
-## 🛠️ Installation & Setup
-
-### Method 1: Star Emulator (Recommended)
-1. Open Star Emulator.
-2. Navigate to the **"Contents"** menu.
-3. Install the `dxvk-2.7.2.1.wcp` file.
-
-### Method 2: Manual Config (Plug-and-Play)
-Place your `dxvk.conf` or `starengine.ini` in any of these supported paths:
-* `/storage/emulated/0/Winlator/`
-* `/storage/emulated/0/Download/`
-* `/storage/emulated/0/`
-
-**Environment Variable Configuration:**
-* **Name:** `DXVK_CONFIG_FILE`
-* **Value:** The directory where your `dxvk.conf` is located (e.g., `/sdcard/Winlator/dxvk.conf`).
-
-------
-
-## 📝 **Dev/User Note: Why 2.7.2.1 uses Manual Thresholds Internal** 
-* **Project Note: Core Branch 2.7.2.1 vs. 2.7.3 Roadmap**
-
-**"The decision to retain manual thresholding in the 2.7.2.1 release was made to ensure absolute stability during the transition to the new HAAE Upscaling Layer. While the Auto-Adaptive logic is mathematically sound, implementing it in the current branch without real-time GPU Load telemetry (utilization %) would lead to 'threshold oscillation' on mid-range devices like the SD680.
-We are delaying the AUTO-THRESHOLD SYSTEM to v2.7.3 to allow for a deeper integration with the Mesa/Turnip GPU Statistics framework. This will allow the engine to distinguish between a CPU-bound stutter and a GPU-bound overflow, preventing unnecessary command flushing and preserving maximum FPS."**
-
-------
-
----
-
-## ⚙️ Configuration Tuning
-You can modify your `dxvk.conf` to find the perfect balance for your specific hardware:
-
-```ini
-# STAR ENGINE CONFIG
-starengine.adaptiveThreshold = 1    # 1 = Auto (Recommended), 0 = Manual(Experimental/yet to be implemented)
-starengine.drawThreshold = 150      # Only used if Adaptive is 0
-starengine.bindSkip = 1             # Change based on level of game stuttering
-starengine.allowQualityScaling = 1  # 1 for High-End (Cubic), 0 for Low-End (Linear)(Experimental/yet to be implemented)
+In a default Wine prefix that would be as follows:
 ```
-------
-------
+export WINEPREFIX=/path/to/wineprefix
+cp x64/*.dll $WINEPREFIX/drive_c/windows/system32
+cp x32/*.dll $WINEPREFIX/drive_c/windows/syswow64
+winecfg
+```
 
-## NOTE (FOR BIONIC VERSION USAGE): 
-* The turnip version 25.1.0 as default does not properly communicate with this dxvk driver hence should not be used as it will not work! properly install the latest turnip driver that is good or compatible for your device performance. All installations and manual placing should be done before the creating a container and the drivers are to be set during installation as this ensures a clean setup! 
-* Also the box 64 version is to be considered; version 0.3.6/ 0.3.6-xxxx for stability usage with this driver(this can be as a fall back for performance) versions 0.3.7/0.3.7-xxxx - 0.4.xxxx variant are recommended for better performance.( This relies greatly and depends on the Device used)
-* The tests in the container will have low fps beacuse of the draw call threshold being set but will notice a very smooth frame pacing and smoother test and smoother gameplay, which is the main aim of the driver, this applies in the game as well depending on your specific hardware device (GPUS with 6xx-7xx and 8s gen 1 too will be working good for this driver). If you're judging the speed based on the built-in container tests or system tools, don't trust them! They don't handle the Async paths in STAR ENGINE properly. Test with an actual game (like Tomb Raider or RE) and turn on the DXVK_HUD to make sure the engine is actually loading.
-* You can tweak your dxvk.conf to better suit your specific game having heavy stutter and lags which help in reducing its issue, but remember to always have a copy of your previous tweaked or default dxvk.conf file incase you want to fallback to it.
-* Provide log files when placing issues down it helps a lot to pinpoint the exact issues.
-* Make sure to avoid mistakes when inputing the environment variables as this is crucial for this versio
-* For max performance locking use the FEXCORE and VKD3D+DXVK and DGVOODO
-------
-------
+For a pure 32-bit Wine prefix (non default) the 32-bit DLLs instead go to the `system32` directory:
+```
+export WINEPREFIX=/path/to/wineprefix
+cp x32/*.dll $WINEPREFIX/drive_c/windows/system32
+winecfg
+```
 
-## 📜 Credits & License
-* Lead Developer: ISYGOLD
-* Base Project: DXVK (Original by doitsujin) v2.7.1
-* License: Distributed under the zlib/libpng license.
+Verify that your application uses DXVK instead of wined3d by enabling the HUD (see notes below).
 
-> NOTE FOR DEVELOPERS: Follow the Readme instructions in both the build/compilation folder and the source code folder to get successful build.
+In order to remove DXVK from a prefix, remove the DLLs and DLL overrides, and run `wineboot -u` to restore the original DLL files.
+
+Tools such as Steam Play, Lutris, Bottles, Heroic Launcher, etc will automatically handle setup of dxvk on their own when enabled.
+
+#### DLL dependencies 
+Listed below are the DLL requirements for using DXVK with any single API.
+
+- d3d8: `d3d8.dll` and `d3d9.dll`
+- d3d9: `d3d9.dll`
+- d3d10: `d3d10core.dll`, `d3d11.dll` and `dxgi.dll`
+- d3d11: `d3d11.dll` and `dxgi.dll`
+
+### Notes on Vulkan drivers
+Before reporting an issue, please check the [Wiki](https://github.com/doitsujin/dxvk/wiki/Driver-support) page on the current driver status and make sure you run a recent enough driver version for your hardware.
+
+### Online multi-player games
+Manipulation of Direct3D libraries in multi-player games may be considered cheating and can get your account **banned**. This may also apply to single-player games with an embedded or dedicated multiplayer portion. **Use at your own risk.**
+
+### HUD
+The `DXVK_HUD` environment variable controls a HUD which can display the framerate and some stat counters. It accepts a comma-separated list of the following options:
+- `devinfo`: Displays the name of the GPU and the driver version.
+- `fps`: Shows the current frame rate.
+- `frametimes`: Shows a frame time graph.
+- `submissions`: Shows the number of command buffers submitted per frame.
+- `drawcalls`: Shows the number of draw calls and render passes per frame.
+- `pipelines`: Shows the total number of graphics and compute pipelines.
+- `descriptors`: Shows the number of descriptor pools and descriptor sets.
+- `memory`: Shows the amount of device memory allocated and used.
+- `allocations`: Shows detailed memory chunk suballocation info.
+- `gpuload`: Shows estimated GPU load. May be inaccurate.
+- `version`: Shows DXVK version.
+- `api`: Shows the D3D feature level used by the application.
+- `cs`: Shows worker thread statistics.
+- `compiler`: Shows shader compiler activity
+- `samplers`: Shows the current number of sampler pairs used *[D3D9 Only]*
+- `ffshaders`: Shows the current number of shaders generated from fixed function state *[D3D9 Only]*
+- `swvp`: Shows whether or not the device is running in software vertex processing mode *[D3D9 Only]*
+- `scale=x`: Scales the HUD by a factor of `x` (e.g. `1.5`)
+- `opacity=y`: Adjusts the HUD opacity by a factor of `y` (e.g. `0.5`, `1.0` being fully opaque).
+
+Additionally, `DXVK_HUD=1` has the same effect as `DXVK_HUD=devinfo,fps`, and `DXVK_HUD=full` enables all available HUD elements.
+
+### Logs
+When used with Wine, DXVK will print log messages to `stderr`. Additionally, standalone log files can optionally be generated by setting the `DXVK_LOG_PATH` variable, where log files in the given directory will be called `app_d3d11.log`, `app_dxgi.log` etc., where `app` is the name of the game executable.
+
+On Windows, log files will be created in the game's working directory by default, which is usually next to the game executable.
+
+### Device filter
+Some applications do not provide a method to select a different GPU. In that case, DXVK can be forced to use a given device:
+- `DXVK_FILTER_DEVICE_NAME="Device Name"` Selects devices with a matching Vulkan device name, which can be retrieved with tools such as `vulkaninfo`. Matches on substrings, so "VEGA" or "AMD RADV VEGA10" is supported if the full device name is "AMD RADV VEGA10 (LLVM 9.0.0)", for example. If the substring matches more than one device, the first device matched will be used.
+- `DXVK_FILTER_DEVICE_UUID="00000000000000000000000000000001"` Selects a device by matching its Vulkan device UUID, which can also be retrieved using tools such as `vulkaninfo`. The UUID must be a 32-character hexadecimal string with no dashes. This method provides more precise selection, especially when using multiple identical GPUs.
+
+**Note:** If the device filter is configured incorrectly, it may filter out all devices and applications will be unable to create a D3D device.
+
+### Debugging
+The following environment variables can be used for **debugging** purposes.
+- `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` Enables Vulkan debug layers. Highly recommended for troubleshooting rendering issues and driver crashes. Requires the Vulkan SDK to be installed on the host system.
+- `DXVK_LOG_LEVEL=none|error|warn|info|debug` Controls message logging.
+- `DXVK_LOG_PATH=/some/directory` Changes path where log files are stored. Set to `none` to disable log file creation entirely, without disabling logging.
+- `DXVK_DEBUG=markers|validation` Enables use of the `VK_EXT_debug_utils` extension for translating performance event markers, or to enable Vulkan validation, respecticely.
+- `DXVK_CONFIG_FILE=/xxx/dxvk.conf` Sets path to the configuration file.
+- `DXVK_CONFIG="dxgi.hideAmdGpu = True; dxgi.syncInterval = 0"` Can be used to set config variables through the environment instead of a configuration file using the same syntax. `;` is used as a seperator.
+- `DXVK_SHADER_CACHE=0`: Disables the internal shader cache.
+- `DXVK_SHADER_CACHE_PATH=/some/directory`: Path to internal shader cache files. By default, this will use `%LOCALAPPDATA%/dxvk` in a Windows
+  or Wine environment, and `$HOME/.cache` or `$XDG_CACHE_HOME` in a native Linux environment.
+
+### Graphics Pipeline Library
+On drivers which support `VK_EXT_graphics_pipeline_library` Vulkan shaders will be compiled at the time the game loads its D3D shaders, rather than at draw time. This reduces or eliminates shader compile stutter in many games when compared to the previous system.
+
+In games that load their shaders during loading screens or in the menu, this can lead to prolonged periods of very high CPU utilization, especially on weaker CPUs. For affected games it is recommended to wait for shader compilation to finish before starting the game to avoid stutter and low performance. Shader compiler activity can be monitored with `DXVK_HUD=compiler`.
+
+**Note:** Games which only load their D3D shaders at draw time (e.g. most Unreal Engine games) will still exhibit some stutter, although it should still be less severe than without this feature.
+
+## Build instructions
+
+In order to pull in all submodules that are needed for building, clone the repository using the following command:
+```
+git clone --recursive https://github.com/doitsujin/dxvk.git
+```
+
+### Requirements:
+- [wine 7.1](https://www.winehq.org/) or newer
+- [Meson](https://mesonbuild.com/) build system (at least version 0.58)
+- [Mingw-w64](https://www.mingw-w64.org) compiler and headers (at least version 10.0)
+- [glslang](https://github.com/KhronosGroup/glslang) compiler
+
+### Building DLLs
+
+#### The simple way
+Inside the DXVK directory, run:
+```
+./package-release.sh master /your/target/directory --no-package
+```
+
+This will create a folder `dxvk-master` in `/your/target/directory`, which contains both 32-bit and 64-bit versions of DXVK, which can be set up in the same way as the release versions as noted above.
+
+In order to preserve the build directories for development, pass `--dev-build` to the script. This option implies `--no-package`. After making changes to the source code, you can then do the following to rebuild DXVK:
+```
+# change to build.32 for 32-bit
+cd /your/target/directory/build.64
+ninja install
+```
+
+#### Compiling manually
+```
+# 64-bit build. For 32-bit builds, replace
+# build-win64.txt with build-win32.txt
+meson setup --cross-file build-win64.txt --buildtype release --prefix /your/dxvk/directory build.w64
+cd build.w64
+ninja install
+```
+
+The D3D8, D3D9, D3D10, D3D11 and DXGI DLLs will be located in `/your/dxvk/directory/bin`.
+
+### Build troubleshooting
+DXVK requires threading support from your mingw-w64 build environment. If you
+are missing this, you may see "error: ‘std::cv_status’ has not been declared"
+or similar threading related errors.
+
+On Debian and Ubuntu, this can be resolved by using the posix alternate, which
+supports threading. For example, choose the posix alternate from these
+commands:
+```
+update-alternatives --config x86_64-w64-mingw32-gcc
+update-alternatives --config x86_64-w64-mingw32-g++
+update-alternatives --config i686-w64-mingw32-gcc
+update-alternatives --config i686-w64-mingw32-g++
+```
+For non debian based distros, make sure that your mingw-w64-gcc cross compiler 
+does have `--enable-threads=posix` enabled during configure. If your distro does
+ship its mingw-w64-gcc binary with `--enable-threads=win32` you might have to
+recompile locally or open a bug at your distro's bugtracker to ask for it. 
+
+# DXVK Native
+
+DXVK Native is a version of DXVK which allows it to be used natively without Wine.
+
+This is primarily useful for game and application ports to either avoid having to write another rendering backend, or to help with port bringup during development.
+
+[Release builds](https://github.com/doitsujin/dxvk/releases) are built using the Steam Runtime.
+
+### How does it work?
+
+DXVK Native replaces certain Windows-isms with a platform and framework-agnostic replacement, for example, `HWND`s can become `SDL_Window*`s, etc.
+All it takes to do that is to add another WSI backend.
+
+**Note:** DXVK Native requires a backend to be explicitly set via the `DXVK_WSI_DRIVER` environment variable. The current built-in options are `SDL3`, `SDL2`, and `GLFW`.
+
+DXVK Native comes with a slim set of Windows header definitions required for D3D9/11 and the MinGW headers for D3D9/11.
+In most cases, it will end up being plug and play with your renderer, but there may be certain teething issues such as:
+- `__uuidof(type)` is supported, but `__uuidof(variable)` is not supported. Use `__uuidof_var(variable)` instead.
