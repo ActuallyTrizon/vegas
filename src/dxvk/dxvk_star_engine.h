@@ -47,6 +47,7 @@ namespace dxvk {
       uint32_t              width,
       uint32_t              height);
 
+    static bool isUnityGame();
     static bool shouldMergeDraws(const DxvkDevice* device);
     static bool shouldCoalesceBarriers(const DxvkDevice* device);
     static float getAdaptiveScale(const DxvkDevice* device, float frameTimeMs);

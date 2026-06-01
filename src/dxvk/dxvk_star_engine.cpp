@@ -5,6 +5,7 @@
 #include <string>
 #include <cstring>
 #include <cctype>
+#include <cstdio>
 #include "shaders/star_fsr_spv.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -784,6 +785,38 @@ namespace dxvk {
     vkd->vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
   }
 
+
+  bool StarEngine::isUnityGame() {
+#ifdef _WIN32
+    return GetModuleHandle("UnityPlayer.dll") != nullptr;
+#else
+    // Check /proc/self/maps for UnityPlayer.dll
+    FILE* f = fopen("/proc/self/maps", "r");
+    if (!f) return false;
+    char line[4096];
+    bool found = false;
+    while (fgets(line, sizeof(line), f)) {
+      if (strstr(line, "UnityPlayer.dll")) {
+        found = true; break;
+      }
+    }
+    fclose(f);
+    if (found) return true;
+    // Also check exe name
+    char exe[4096];
+    int len = (int)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (len > 0) {
+      exe[len] = '\0';
+      char* name = strrchr(exe, '/');
+      if (name) {
+        for (char* p = name; *p; ++p) if (*p >= 'A' && *p <= 'Z') *p += 0x20;
+        if (strstr(name, "unity"))
+          return true;
+      }
+    }
+    return false;
+#endif
+  }
 
   bool StarEngine::shouldMergeDraws(const DxvkDevice* device) {
     if (!device || !device->adapter()) return false;

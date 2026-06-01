@@ -499,6 +499,12 @@ namespace dxvk {
     }
 
     // Default: StarEngine system-RAM % based (Feature #1)
+    // Unity games crash on Turnip-KGSL with inflated VRAM due to
+    // oversized chunks exceeding KGSL per-allocation limits.
+    if (StarEngine::isUnityGame()) {
+      Logger::info("Unity game detected: skipping VRAM inflation");
+      return;
+    }
     StarEngine::applyVramSwap(m_memory.core.memoryProperties, tier);
   }
 
