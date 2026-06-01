@@ -686,6 +686,8 @@ namespace dxvk {
         && m_device->properties().core.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
     }
 
+    updateMemoryHeapBudgets();
+
     for (uint32_t i = 0; i < m_memTypeCount; i++) {
       auto& type = m_memTypes[i];
 
@@ -710,8 +712,6 @@ namespace dxvk {
       m_sparseMemoryTypes = determineSparseMemoryTypes(device);
 
     determineBufferUsageFlagsPerMemoryType();
-
-    updateMemoryHeapBudgets();
   }
   
   
@@ -804,8 +804,12 @@ namespace dxvk {
           // from and may be very limited in size, so we should avoid dedicated
           // allocations as well as fragmentation as much as possible.
           maxChunkSize = DxvkPageAllocator::MaxChunkSize / (env::is32BitHostPlatform() ? 4u : 1u);
-          maxChunkSize = std::min(maxChunkSize, type.heap->properties.size / MinAllocationsPerHeap);
+          maxChunkSize = std::min(maxChunkSize, type.heap->memoryBudget / MinAllocationsPerHeap);
           maxChunkSize = std::max(maxChunkSize, selectedPool.maxChunkSize);
+
+          if (m_device->adapter()->isAdreno()
+              && (type.heap->properties.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+            maxChunkSize = std::min(maxChunkSize, VkDeviceSize(64ull << 20));
 
           // Unlike on system memory heaps, we want to try and fit in multiple
           // allocations into one chunk because these tend to get discarded often.
@@ -1921,10 +1925,19 @@ namespace dxvk {
     if (mappable)
       size /= env::is32BitHostPlatform() ? 16u : 4u;
 
-    // Ensure that we can at least do 7  allocations to fill
+    // Ensure that we can at least do 7 allocations to fill
     // the heap. Might be useful on systems with small BAR.
-    while (MinAllocationsPerHeap * size > type.heap->properties.size)
+    while (MinAllocationsPerHeap * size > type.heap->memoryBudget)
       size /= 2u;
+
+    // Adreno KGSL has a per-allocation limit (~64 MiB),
+    // cap chunks to avoid silent allocation failures.
+    if (m_device->adapter()->isAdreno()
+        && (type.heap->properties.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) {
+      constexpr VkDeviceSize kMaxAdrenoChunk = 64ull << 20;
+      while (size > kMaxAdrenoChunk)
+        size /= 2u;
+    }
 
     // Always use at least the minimum chunk size
     return std::max(size, DxvkMemoryPool::MinChunkSize);
