@@ -25,7 +25,7 @@ jobs:
             -w /workspace \
             fedora:latest \
             bash -c "
-              dnf install -y gcc gcc-c++ glslang \
+              dnf install -y gcc gcc-c++ glslang SDL2-devel \
                 mingw32-gcc mingw32-gcc-c++ \
                 mingw32-vulkan-headers mingw32-vulkan-loader \
                 mingw32-spirv-headers \
