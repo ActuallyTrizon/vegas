@@ -37,10 +37,10 @@ jobs:
                 mingw64-spirv-headers \
                 meson ninja-build
               echo '--- Cross compiler check ---'
-              which x86_64-w64-mingw32-gcc
-              x86_64-w64-mingw32-gcc --version
-              which i686-w64-mingw32-gcc
-              i686-w64-mingw32-gcc --version
+              command -v x86_64-w64-mingw32-gcc || true
+              x86_64-w64-mingw32-gcc --version || true
+              command -v i686-w64-mingw32-gcc || true
+              i686-w64-mingw32-gcc --version || true
               echo '--- Starting DXVK build ---'
               mkdir -p /workspace/build-output
               bash package-release.sh ${{ inputs.version }} /workspace/build-output --no-package
