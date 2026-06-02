@@ -4,6 +4,8 @@
 
 > **⚠️ Important:** This is a downstream fork. All improvements specific to this build are additive and fully config-gated — stock DXVK behavior is preserved when no StarEngine config options are set.
 
+> **⚠️ Unity Compatibility:** This build is stable for non-Unity games (Unreal Engine, Source, etc.) but is currently unstable / non-functional for Unity-based titles on Adreno.
+
 ---
 
 ## StarEngine Features
@@ -90,6 +92,16 @@ When `dxvk.starPersona` is set (or auto-detected), the engine masks the GPU iden
 | LAGGING | Yellow | frame time > 1.5× target |
 | STUTTERING | Orange | Delta > 0.75× target |
 | OVERHEATING | Red | Load ≥ 95% + frame time > 3× target |
+
+## Diagnostic & Stability Improvements
+
+| Improvement | Description |
+|-------------|-------------|
+| Adreno detection ordering | Adreno is now detected before persona masking, ensuring all Adreno-specific memory and optimization workarounds activate on real hardware |
+| Persona gating | GPU identity masking applies only at the API query layer — the Vulkan driver sees the real Adreno, fixing memory type selection and host-visible heap access |
+| Memory allocator diagnostics | Failed `vkAllocateMemory` calls now log the returned `VkResult`, surfacing driver-level OOM errors in the output |
+| Unity compatibility gate | VRAM inflation is deferred for Unity titles to avoid memory pressure on shared-memory systems |
+| KGSL allocation cap | Maximum allocation chunk size capped at 64 MiB on Adreno KGSL drivers to prevent driver-level allocation failures |
 
 ---
 
