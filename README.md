@@ -1,3 +1,5 @@
+<img width="1280" height="720" alt="20260505_152432" src="https://github.com/user-attachments/assets/e73f1d6f-7935-46d8-83ec-d903eaaae0db" />
+
 # DXVK — StarEngine (Vegas Edition)
 
 **Version 2.7.3-vegas** — A DXVK fork with Adreno-optimized enhancements for mobile/ARM64 gaming via Wine. Built on the shoulders of the excellent [DXVK](https://github.com/doitsujin/dxvk) project by doitsujin.
@@ -102,6 +104,10 @@ When `dxvk.starPersona` is set (or auto-detected), the engine masks the GPU iden
 | Memory allocator diagnostics | Failed `vkAllocateMemory` calls now log the returned `VkResult`, surfacing driver-level OOM errors in the output |
 | Unity compatibility gate | VRAM inflation is deferred for Unity titles to avoid memory pressure on shared-memory systems |
 | KGSL allocation cap | Maximum allocation chunk size capped at 64 MiB on Adreno KGSL drivers to prevent driver-level allocation failures |
+
+<img width="2400" height="1080" alt="Screenshot_2026-05-31-20-01-21-510_com winlator star" src="https://github.com/user-attachments/assets/adbb727e-4cd5-4c72-8cc7-9db9a628cf9c" />
+<img width="2400" height="1080" alt="Screenshot_2026-05-31-20-07-58-541_com winlator star" src="https://github.com/user-attachments/assets/f3af902c-69db-4f73-ad0c-39ec56c8ccd6" />
+
 
 ---
 
