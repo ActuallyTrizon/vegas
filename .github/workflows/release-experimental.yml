@@ -1,6 +1,7 @@
 name: Release (Experimental)
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Build DXVK (x64 + x32)"]
     types: [completed]
@@ -8,21 +9,34 @@ on:
 
 jobs:
   scavenge:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.get-sha.outputs.sha }}
     steps:
       - id: get-sha
         run: |
-          SHA="${{ github.event.workflow_run.head_sha }}"
-          echo "sha=${SHA:0:7}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            API=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/runs?branch=master&status=success&per_page=1")
+            FULL_SHA=$(echo "$API" | python3 -c "import sys,json; print(json.load(sys.stdin)['workflow_runs'][0]['head_sha'])")
+            RUN_ID=$(echo "$API" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['workflow_runs'][0]['id'])")
+            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          else
+            FULL_SHA="${{ github.event.workflow_run.head_sha }}"
+            echo "run_id=${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+          fi
+          echo "full_sha=$FULL_SHA" >> $GITHUB_OUTPUT
+          echo "sha=${FULL_SHA:0:7}" >> $GITHUB_OUTPUT
 
       - name: Download artifact from build.yml
         uses: actions/download-artifact@v4
         with:
-          name: dxvk-vegas-${{ github.event.workflow_run.head_sha }}
+          name: dxvk-vegas-${{ steps.get-sha.outputs.full_sha }}
           path: ./dlls
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.get-sha.outputs.run_id }}
 
       - name: Upload as vegas artifact
         uses: actions/upload-artifact@v4
