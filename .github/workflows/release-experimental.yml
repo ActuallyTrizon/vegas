@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version string (e.g. 2.7.3-vegasengine)'
+        description: Version string (e.g. 2.7.3-vegasengine)
         required: true
-        default: '2.7.3-vegasengine'
+        default: 2.7.3-vegasengine
 
 jobs:
   build:
@@ -62,13 +62,12 @@ jobs:
           cd ./dxvk
           mv x64 system32
           mv x32 syswow64
-
           cat > profile.json << 'JSONEOF'
           {
             "type": "DXVK",
             "versionName": "${{ inputs.version }}",
             "versionCode": 0,
-            "description": "VEGAS — Community DXVK fork optimized for Android/Winlator, rebranded from Star Engine. Author: isygold",
+            "description": "VEGAS — Community DXVK fork optimized for Android/Winlator",
             "files": [
               {"source": "system32/d3d9.dll",      "target": "${system32}/d3d9.dll"},
               {"source": "system32/d3d10core.dll", "target": "${system32}/d3d10core.dll"},
@@ -82,9 +81,7 @@ jobs:
             ]
           }
           JSONEOF
-
           tar --zstd -cf "../dxvk-${{ inputs.version }}.wcp" system32/ syswow64/ profile.json
-          echo "WCP created: dxvk-${{ inputs.version }}.wcp"
 
       - name: Upload WCP
         uses: actions/upload-artifact@v4
@@ -93,7 +90,9 @@ jobs:
           path: ./dxvk-*.wcp
 
   release:
-    needs: [build, package-wcp]
+    needs:
+      - build
+      - package-wcp
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -125,62 +124,51 @@ jobs:
       - name: Generate release body
         run: |
           cat > ./release/release-body.md << 'BODYEOF'
-          ## 🚀 VEGAS v${{ inputs.version }} — Experimental Release
+          ## VEGAS v${{ inputs.version }} — Experimental Release
 
           ### What is VEGAS?
           - Community-driven DXVK fork optimized for Android gaming via Winlator/Star Emulator
           - Rebranded evolution of Star Engine with continued HAAE upscaling technology
           - Developed by isygold
 
-          ### ✨ Features
-          - **HAAE Tiered Adaptive Scaling** — split under StarProfile for better auto system logic
-            - Performance Tier: Linear Blit (zero-lag) for SD6xx
-            - Quality Tier: Cubic Reconstruction for SD7xx/8xx
-            - Dynamic VRAM: auto-set based on device RAM
-            - GPU Spoofing: Adreno GPUs spoofed for game compatibility
-          - **Enhanced Bind-Skip Logic** — reduced CPU overhead in draw-heavy scenes
-          - **Unity Engine Patches** — fixes "Failed to Initialize 3D Engine" errors in modern Unity titles
-          - **D3D9 Resolution Fix** — corrects legacy scaling bugs in titles like Far Cry 2
-          - **ASTC Streaming Optimization** — full ASTC decode pipeline leveraging timeline semaphores (VK_KHR_timeline_semaphore) on Turnip for non-blocking texture uploads, reducing memory pressure and eliminating CPU-side stalls
-          - **Bundled x32 + x64** — single package covers all architectures
+          ### Features
+          - HAAE Tiered Adaptive Scaling — split under StarProfile for better auto system logic
+          - Performance Tier: Linear Blit (zero-lag) for SD6xx
+          - Quality Tier: Cubic Reconstruction for SD7xx/8xx
+          - Dynamic VRAM: auto-set based on device RAM
+          - GPU Spoofing: Adreno GPUs spoofed for game compatibility
+          - Enhanced Bind-Skip Logic — reduced CPU overhead in draw-heavy scenes
+          - Unity Engine Patches — fixes Failed to Initialize 3D Engine errors
+          - D3D9 Resolution Fix — corrects legacy scaling bugs
+          - ASTC Streaming Optimization — timeline semaphore based decode pipeline
+          - Bundled x32 + x64 — single package covers all architectures
 
-          ### 📦 Changelog
-          - Migrated base from DXVK 2.7.1 → **2.7.2.1-HAAE**
+          ### Changelog
+          - Migrated base from DXVK 2.7.1 to 2.7.2.1-HAAE
           - StarProfile system for automated HAAE tier selection
           - Optimized swapchain hooks for Turnip v26.x.x R5+
           - VFG (Vegas Frame-Gen) — improved frame pacing
           - Enhanced FSR upscaling with better edge detection and sharpness
           - Various stability and compatibility improvements
 
-          ### 🛠 Installation
+          ### Installation
+          Star Emulator (WCP Method — Recommended):
+          1. Download dxvk-${{ inputs.version }}.wcp
+          2. Open Star Emulator > Contents > Install Content
+          3. Select the .wcp file
 
-          **Star Emulator (WCP Method — Recommended):**
-          1. Download `dxvk-${{ inputs.version }}.wcp`
-          2. Open Star Emulator → **Contents** → **Install Content**
-          3. Select the `.wcp` file
-          4. The component will be available in your container's DX Wrapper settings
+          Manual Method:
+          1. Download vegas-${{ inputs.version }}.zip
+          2. Extract x64/ and x32/ DLLs
+          3. Rename dxvk.conf to starengine.ini for Star Emulator
 
-          **Manual Method:**
-          1. Download `vegas-${{ inputs.version }}.zip`
-          2. Extract `x64/` and `x32/` DLLs
-          3. The included `dxvk.conf` must be **renamed to `starengine.ini`** for Star Emulator — `dxvk.conf` will NOT be recognized by the DXVK_CONFIG_FILE preset for **"STAR EMULATOR ONLY"** on this fork. (Path compatibility for `dxvk.conf` will be added in a future update.)
-          4. Place `starengine.ini` in `/sdcard/` or `/storage/emulated/0/Download/`
-          5. Select from pre-configured environment variable presets for DXVK_CONFIG_FILE, or configure manually
-          6. While VEGAS works independently without a config file, it is **highly recommended** to use `starengine.ini` for fine-tuning based on your device and game experience
-          7. ⚠️ **Always keep a backup** of your active config before replacing
+          ### Credits
+          - Jacojayy — Collaborator and inspiration
+          - Phryanik — Collaborator throughout Star Engine journey
+          - doitsujin — Maintainer and original developer of DXVK
+          - 412 Banner — Star Emulator contributions
+          - The Star Community
 
-          ### ⚠️ Notes
-          - Recommended Turnip driver: **v26.x.x R5+** (avoid v25.1.0)
-          - Box64 v0.3.7+ recommended for best performance
-
-          ### 🙏 Credits
-          - **Jacojayy** — Collaborator and inspiration for this project
-          - **Phryanik** — Collaborator who helped throughout the journey of Star Engine from inception to this very build
-          - **doitsujin** — Maintainer and original developer of DXVK
-          - **412 Banner** — For much contributions to the Star Emulator
-          - **The Star Community** — For your love, comments, and support in making this come to life
-
-          ### 🐛 Support
           Report issues at github.com/star-emu/vegas
           BODYEOF
 
@@ -188,7 +176,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: experimental-v${{ inputs.version }}-alpha
-          name: VEGAS v${{ inputs.version }} — Experimental
+          name: "VEGAS v${{ inputs.version }} — Experimental"
           body_path: ./release/release-body.md
           prerelease: true
           files: |
