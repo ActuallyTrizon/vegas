@@ -217,10 +217,10 @@ All vsg features use a consistent pattern in `src/dxvk/dxvk_star_engine.cpp`:
 
 | Improvement | Description |
 |-------------|-------------|
-| Adreno detection ordering | , ,  — Adreno is now detected before persona masking, ensuring all Adreno-specific memory and optimization workarounds activate on real hardware |
-| Persona gating | ,  — GPU identity masking applies only at the API query layer; the Vulkan driver sees the real Adreno, fixing memory type selection and host-visible heap access |
-| Memory allocator diagnostics |  — Failed  calls now log the returned , surfacing driver-level OOM errors in the output |
-| Unity compatibility gate |  — VRAM inflation is deferred for Unity titles to avoid memory pressure on shared-memory systems |
+| Adreno detection ordering | `src/dxvk/dxvk_device_info.cpp`, `src/dxvk/dxvk_device_info.h`, `src/dxvk/dxvk_adapter.h` — Adreno is now detected before persona masking, ensuring all Adreno-specific memory and optimization workarounds activate on real hardware |
+| Persona gating | `src/dxgi/dxgi_adapter.cpp`, `src/d3d9/d3d9_adapter.cpp` — GPU identity masking applies only at the API query layer; the Vulkan driver sees the real Adreno, fixing memory type selection and host-visible heap access |
+| Memory allocator diagnostics | `src/dxvk/dxvk_memory.cpp` — Failed `vkAllocateMemory` calls now log the returned `VkResult`, surfacing driver-level OOM errors in the output |
+| Unity compatibility gate | `src/dxvk/dxvk_star_engine.cpp` — VRAM inflation is deferred for Unity titles to avoid memory pressure on shared-memory systems |
 | KGSL allocation cap |  — Maximum allocation chunk size capped at 64 MiB on Adreno KGSL drivers to prevent driver-level allocation failures |
 
 ---
