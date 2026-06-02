@@ -19,21 +19,30 @@ jobs:
 
       - name: Build in Fedora container
         run: |
-          docker pull fedora:latest
+          docker pull fedora:44
           docker run --rm \
             -v ${{ github.workspace }}:/workspace:rw \
             -w /workspace \
-            fedora:latest \
+            fedora:44 \
             bash -c "
-              dnf install -y gcc gcc-c++ glslang SDL2-devel \
-                mingw32-gcc mingw32-gcc-c++ \
+              set -e
+              dnf install -y gcc gcc-c++ glslang \
+                pkgconf \
+                libdisplay-info-devel SDL2-devel \
+                mingw32-gcc mingw32-gcc-c++ mingw32-binutils \
                 mingw32-vulkan-headers mingw32-vulkan-loader \
                 mingw32-spirv-headers \
-                mingw64-gcc mingw64-gcc-c++ \
+                mingw64-gcc mingw64-gcc-c++ mingw64-binutils \
                 mingw64-vulkan-headers mingw64-vulkan-loader \
                 mingw64-spirv-headers \
-                meson ninja-build &&
-              mkdir -p /workspace/build-output &&
+                meson ninja-build
+              echo '--- Cross compiler check ---'
+              which x86_64-w64-mingw32-gcc
+              x86_64-w64-mingw32-gcc --version
+              which i686-w64-mingw32-gcc
+              i686-w64-mingw32-gcc --version
+              echo '--- Starting DXVK build ---'
+              mkdir -p /workspace/build-output
               bash package-release.sh ${{ inputs.version }} /workspace/build-output --no-package
             "
 
