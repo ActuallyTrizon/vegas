@@ -1,0 +1,185 @@
+name: Release (Experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version string (e.g. 2.7.3-vegasengine)
+        required: true
+        default: 2.7.3-vegasengine
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Build in Fedora container
+        run: |
+          docker pull fedora:latest
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace:rw \
+            -w /workspace \
+            fedora:latest \
+            bash -c "
+              dnf install -y gcc gcc-c++ glslang \
+                mingw32-gcc mingw32-gcc-c++ \
+                mingw32-vulkan-headers mingw32-vulkan-loader \
+                mingw32-spirv-headers \
+                mingw64-gcc mingw64-gcc-c++ \
+                mingw64-vulkan-headers mingw64-vulkan-loader \
+                mingw64-spirv-headers \
+                meson ninja-build &&
+              mkdir -p /workspace/build-output &&
+              bash package-release.sh ${{ inputs.version }} /workspace/build-output --no-package
+            "
+
+      - name: Upload DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: vegas-${{ inputs.version }}
+          path: ${{ github.workspace }}/build-output/dxvk-${{ inputs.version }}/
+          if-no-files-found: error
+
+  package-wcp:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install zstd
+        run: sudo apt-get update -y && sudo apt-get install -y zstd
+
+      - name: Download DLLs
+        uses: actions/download-artifact@v4
+        with:
+          name: vegas-${{ inputs.version }}
+          path: ./dxvk
+
+      - name: Create WCP
+        run: |
+          cd ./dxvk
+          mv x64 system32
+          mv x32 syswow64
+          cat > profile.json << 'JSONEOF'
+          {
+            "type": "DXVK",
+            "versionName": "${{ inputs.version }}",
+            "versionCode": 0,
+            "description": "VEGAS — Community DXVK fork optimized for Android/Winlator",
+            "files": [
+              {"source": "system32/d3d9.dll",      "target": "${system32}/d3d9.dll"},
+              {"source": "system32/d3d10core.dll", "target": "${system32}/d3d10core.dll"},
+              {"source": "system32/d3d11.dll",     "target": "${system32}/d3d11.dll"},
+              {"source": "system32/dxgi.dll",      "target": "${system32}/dxgi.dll"},
+              {"source": "syswow64/d3d8.dll",      "target": "${syswow64}/d3d8.dll"},
+              {"source": "syswow64/d3d9.dll",      "target": "${syswow64}/d3d9.dll"},
+              {"source": "syswow64/d3d10core.dll", "target": "${syswow64}/d3d10core.dll"},
+              {"source": "syswow64/d3d11.dll",     "target": "${syswow64}/d3d11.dll"},
+              {"source": "syswow64/dxgi.dll",      "target": "${syswow64}/dxgi.dll"}
+            ]
+          }
+          JSONEOF
+          tar --zstd -cf "../dxvk-${{ inputs.version }}.wcp" system32/ syswow64/ profile.json
+
+      - name: Upload WCP
+        uses: actions/upload-artifact@v4
+        with:
+          name: wcp-${{ inputs.version }}
+          path: ./dxvk-*.wcp
+
+  release:
+    needs:
+      - build
+      - package-wcp
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Download DLLs
+        uses: actions/download-artifact@v4
+        with:
+          name: vegas-${{ inputs.version }}
+          path: ./release/vegas-${{ inputs.version }}
+
+      - name: Download WCP
+        uses: actions/download-artifact@v4
+        with:
+          name: wcp-${{ inputs.version }}
+          path: ./release
+
+      - name: Zip DLLs
+        run: |
+          cd ./release
+          zip -r "vegas-${{ inputs.version }}.zip" "vegas-${{ inputs.version }}"
+
+      - name: Stage dxvk.conf
+        run: cp ${{ github.workspace }}/dxvk.conf ./release/dxvk.conf
+
+      - name: Generate release body
+        run: |
+          cat > ./release/release-body.md << 'BODYEOF'
+          ## VEGAS v${{ inputs.version }} — Experimental Release
+
+          ### What is VEGAS?
+          - Community-driven DXVK fork optimized for Android gaming via Winlator/Star Emulator
+          - Rebranded evolution of Star Engine with continued HAAE upscaling technology
+          - Developed by isygold
+
+          ### Features
+          - HAAE Tiered Adaptive Scaling — split under StarProfile for better auto system logic
+          - Performance Tier: Linear Blit (zero-lag) for SD6xx
+          - Quality Tier: Cubic Reconstruction for SD7xx/8xx
+          - Dynamic VRAM: auto-set based on device RAM
+          - GPU Spoofing: Adreno GPUs spoofed for game compatibility
+          - Enhanced Bind-Skip Logic — reduced CPU overhead in draw-heavy scenes
+          - Unity Engine Patches — fixes Failed to Initialize 3D Engine errors
+          - D3D9 Resolution Fix — corrects legacy scaling bugs
+          - ASTC Streaming Optimization — timeline semaphore based decode pipeline
+          - Bundled x32 + x64 — single package covers all architectures
+
+          ### Changelog
+          - Migrated base from DXVK 2.7.1 to 2.7.2.1-HAAE
+          - StarProfile system for automated HAAE tier selection
+          - Optimized swapchain hooks for Turnip v26.x.x R5+
+          - VFG (Vegas Frame-Gen) — improved frame pacing
+          - Enhanced FSR upscaling with better edge detection and sharpness
+          - Various stability and compatibility improvements
+
+          ### Installation
+          Star Emulator (WCP Method — Recommended):
+          1. Download dxvk-${{ inputs.version }}.wcp
+          2. Open Star Emulator > Contents > Install Content
+          3. Select the .wcp file
+
+          Manual Method:
+          1. Download vegas-${{ inputs.version }}.zip
+          2. Extract x64/ and x32/ DLLs
+          3. Rename dxvk.conf to starengine.ini for Star Emulator
+
+          ### Credits
+          - Jacojayy — Collaborator and inspiration
+          - Phryanik — Collaborator throughout Star Engine journey
+          - doitsujin — Maintainer and original developer of DXVK
+          - 412 Banner — Star Emulator contributions
+          - The Star Community
+
+          Report issues at github.com/star-emu/vegas
+          BODYEOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: experimental-v${{ inputs.version }}-alpha
+          name: "VEGAS v${{ inputs.version }} — Experimental"
+          body_path: ./release/release-body.md
+          prerelease: true
+          files: |
+            ./release/vegas-${{ inputs.version }}.zip
+            ./release/dxvk-${{ inputs.version }}.wcp
+            ./release/dxvk.conf
