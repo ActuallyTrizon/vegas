@@ -1,60 +1,37 @@
 name: Release (Experimental)
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version string (e.g. 2.7.3-vegasengine)
-        required: true
-        default: 2.7.3-vegasengine
+  workflow_run:
+    workflows: ["Build DXVK (x64 + x32)"]
+    types: [completed]
+    branches: [master]
 
 jobs:
-  build:
+  scavenge:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.get-sha.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Build in Fedora container
+      - id: get-sha
         run: |
-          docker pull fedora:44
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace:rw \
-            -w /workspace \
-            fedora:44 \
-            bash -c "
-              set -e
-              dnf install -y gcc gcc-c++ glslang \
-                pkgconf \
-                libdisplay-info-devel SDL2-devel \
-                mingw32-gcc mingw32-gcc-c++ mingw32-binutils \
-                mingw32-vulkan-headers mingw32-vulkan-loader \
-                mingw32-spirv-headers \
-                mingw64-gcc mingw64-gcc-c++ mingw64-binutils \
-                mingw64-vulkan-headers mingw64-vulkan-loader \
-                mingw64-spirv-headers \
-                meson ninja-build
-              echo '--- Cross compiler check ---'
-              command -v x86_64-w64-mingw32-gcc || true
-              x86_64-w64-mingw32-gcc --version || true
-              command -v i686-w64-mingw32-gcc || true
-              i686-w64-mingw32-gcc --version || true
-              echo '--- Starting DXVK build ---'
-              mkdir -p /workspace/build-output
-              bash package-release.sh ${{ inputs.version }} /workspace/build-output --no-package
-            "
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "sha=${SHA:0:7}" >> $GITHUB_OUTPUT
 
-      - name: Upload DLLs
+      - name: Download artifact from build.yml
+        uses: actions/download-artifact@v4
+        with:
+          name: dxvk-vegas-${{ github.event.workflow_run.head_sha }}
+          path: ./dlls
+
+      - name: Upload as vegas artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vegas-${{ inputs.version }}
-          path: ${{ github.workspace }}/build-output/dxvk-${{ inputs.version }}/
-          if-no-files-found: error
+          name: vegas-${{ steps.get-sha.outputs.sha }}
+          path: ./dlls
 
   package-wcp:
-    needs: build
+    needs: scavenge
     runs-on: ubuntu-latest
     steps:
       - name: Install zstd
@@ -63,7 +40,7 @@ jobs:
       - name: Download DLLs
         uses: actions/download-artifact@v4
         with:
-          name: vegas-${{ inputs.version }}
+          name: vegas-${{ needs.scavenge.outputs.sha }}
           path: ./dxvk
 
       - name: Create WCP
@@ -74,7 +51,7 @@ jobs:
           cat > profile.json << 'JSONEOF'
           {
             "type": "DXVK",
-            "versionName": "${{ inputs.version }}",
+            "versionName": "2.7.3-vegas",
             "versionCode": 0,
             "description": "VEGAS — Community DXVK fork optimized for Android/Winlator",
             "files": [
@@ -90,17 +67,17 @@ jobs:
             ]
           }
           JSONEOF
-          tar --zstd -cf "../dxvk-${{ inputs.version }}.wcp" system32/ syswow64/ profile.json
+          tar --zstd -cf "../dxvk-2.7.3-vegas-${{ needs.scavenge.outputs.sha }}.wcp" system32/ syswow64/ profile.json
 
       - name: Upload WCP
         uses: actions/upload-artifact@v4
         with:
-          name: wcp-${{ inputs.version }}
+          name: wcp-${{ needs.scavenge.outputs.sha }}
           path: ./dxvk-*.wcp
 
   release:
     needs:
-      - build
+      - scavenge
       - package-wcp
     runs-on: ubuntu-latest
     permissions:
@@ -113,19 +90,19 @@ jobs:
       - name: Download DLLs
         uses: actions/download-artifact@v4
         with:
-          name: vegas-${{ inputs.version }}
-          path: ./release/vegas-${{ inputs.version }}
+          name: vegas-${{ needs.scavenge.outputs.sha }}
+          path: ./release/vegas-${{ needs.scavenge.outputs.sha }}
 
       - name: Download WCP
         uses: actions/download-artifact@v4
         with:
-          name: wcp-${{ inputs.version }}
+          name: wcp-${{ needs.scavenge.outputs.sha }}
           path: ./release
 
       - name: Zip DLLs
         run: |
           cd ./release
-          zip -r "vegas-${{ inputs.version }}.zip" "vegas-${{ inputs.version }}"
+          zip -r "dxvk-2.7.3-vegas-${{ needs.scavenge.outputs.sha }}.zip" "vegas-${{ needs.scavenge.outputs.sha }}"
 
       - name: Stage dxvk.conf
         run: cp ${{ github.workspace }}/dxvk.conf ./release/dxvk.conf
@@ -133,7 +110,7 @@ jobs:
       - name: Generate release body
         run: |
           cat > ./release/release-body.md << 'BODYEOF'
-          ## VEGAS v${{ inputs.version }} — Experimental Release
+          ## VEGAS 2.7.3-vegas — Experimental Release
 
           ### What is VEGAS?
           - Community-driven DXVK fork optimized for Android gaming via Winlator/Star Emulator
@@ -162,12 +139,12 @@ jobs:
 
           ### Installation
           Star Emulator (WCP Method — Recommended):
-          1. Download dxvk-${{ inputs.version }}.wcp
+          1. Download dxvk-2.7.3-vegas-$(BuildSHA).wcp
           2. Open Star Emulator > Contents > Install Content
           3. Select the .wcp file
 
           Manual Method:
-          1. Download vegas-${{ inputs.version }}.zip
+          1. Download dxvk-2.7.3-vegas-$(BuildSHA).zip
           2. Extract x64/ and x32/ DLLs
           3. Rename dxvk.conf to starengine.ini for Star Emulator
 
@@ -184,11 +161,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: experimental-v${{ inputs.version }}-alpha
-          name: "VEGAS v${{ inputs.version }} — Experimental"
+          tag_name: experimental-vegas-${{ needs.scavenge.outputs.sha }}
+          name: "VEGAS 2.7.3-vegas — Experimental"
           body_path: ./release/release-body.md
           prerelease: true
           files: |
-            ./release/vegas-${{ inputs.version }}.zip
-            ./release/dxvk-${{ inputs.version }}.wcp
+            ./release/dxvk-2.7.3-vegas-${{ needs.scavenge.outputs.sha }}.zip
+            ./release/dxvk-2.7.3-vegas-${{ needs.scavenge.outputs.sha }}.wcp
             ./release/dxvk.conf
